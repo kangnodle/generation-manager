@@ -1,11 +1,7 @@
-# Cargo build output and release bundles under target/dist
 /target/
 
-# Keep the CLI workspace lockfile available for version control
 !/Cargo.lock
 
-# Local Generation Manager state
 /.gm/
 
-# Local graft graph and cache
 /graft/

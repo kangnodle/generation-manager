@@ -8,13 +8,10 @@ use gm_runner::artifacts::dir_size;
 use gm_store::ProjectLock;
 use std::process::ExitCode;
 
-/// Stage 2: build, test, freeze.
 pub fn build(from: Option<&str>, note: Option<String>, activate_after: bool) -> Result<ExitCode> {
     let project = Project::open()?;
     let lock = project.store.lock()?;
 
-    // Standing inside a worktree makes it the default build source, so the
-    // common case needs no flag.
     let selected = project.select_worktree(from);
     let source = match &selected {
         | Some(name) => project.worktree_path(name)?,
@@ -45,7 +42,6 @@ pub fn build(from: Option<&str>, note: Option<String>, activate_after: bool) -> 
     activate(&project, entry.meta.id, "gm generation build --activate", &lock)
 }
 
-/// Activate a generation, honouring the health check.
 pub fn activate_generation(target: Option<u64>) -> Result<ExitCode> {
     let project = Project::open()?;
     let lock = project.store.lock()?;
@@ -61,7 +57,6 @@ pub fn activate_generation(target: Option<u64>) -> Result<ExitCode> {
     activate(&project, id, "gm generation activate", &lock)
 }
 
-/// Stage 3: back out to an older generation.
 pub fn rollback(target: Option<u64>) -> Result<ExitCode> {
     let project = Project::open()?;
     let lock = project.store.lock()?;
@@ -74,8 +69,6 @@ pub fn rollback(target: Option<u64>) -> Result<ExitCode> {
 }
 
 fn activate(project: &Project, id: GenerationId, reason: &str, lock: &ProjectLock) -> Result<ExitCode> {
-    // Taking the slot back from a development run is legitimate, but silently
-    // killing someone's `gm worktree run` is not.
     if let Some(state) = project.supervisor().running()
         && state.source.is_dev()
     {

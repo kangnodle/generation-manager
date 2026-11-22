@@ -14,10 +14,6 @@ use std::{io::{Read,
           time::{Duration,
                  Instant}};
 
-/// Poll the configured probe until it passes or the timeout expires.
-///
-/// This is the step that turns "switch and hope" into something you can trust:
-/// a generation that never answers is rolled back automatically.
 pub fn wait_until_healthy(check: &HealthCheck, cwd: &Path) -> Result<()> {
     if !check.is_configured() {
         return Ok(());
@@ -69,7 +65,6 @@ fn resolve(addr: &str, deadline: Instant) -> Vec<SocketAddr> {
     }
     let addr = addr.to_string();
     let (sender, receiver) = std::sync::mpsc::channel();
-    // System DNS lookup has no timeout; keep it outside the activation thread.
     std::thread::spawn(move || {
         let addresses = addr.to_socket_addrs().map(|addresses| addresses.collect()).unwrap_or_default();
         let _ = sender.send(addresses);
@@ -111,8 +106,6 @@ fn command_ok(cmd: &str, cwd: &Path, deadline: Instant) -> bool {
     }
 }
 
-/// A deliberately tiny HTTP/1.0 GET: the probe targets a local process, so
-/// pulling in a full client (and a TLS stack) would be all cost and no benefit.
 fn http_ok(url: &str, deadline: Instant) -> bool {
     let Some((host_port, path)) = split_url(url) else {
         return false;
@@ -166,7 +159,6 @@ fn http_ok(url: &str, deadline: Instant) -> bool {
     Instant::now() < deadline && matches!(code.parse::<u16>(), Ok(c) if (200..400).contains(&c))
 }
 
-/// `http://127.0.0.1:8080/healthz` -> (`127.0.0.1:8080`, `/healthz`)
 fn split_url(url: &str) -> Option<(String, String)> {
     let rest = url.strip_prefix("http://")?;
     let (authority, path) = match rest.find('/') {

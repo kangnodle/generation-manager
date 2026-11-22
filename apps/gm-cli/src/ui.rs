@@ -1,5 +1,3 @@
-//! Small output helpers. Plain text, no colour dependency.
-
 pub const OK: &str = "✓";
 pub const ERR: &str = "✗";
 pub const ARROW: &str = "→";

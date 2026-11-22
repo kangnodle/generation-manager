@@ -12,8 +12,6 @@ use gm_runner::{Supervisor,
                 git};
 use std::process::ExitCode;
 
-/// Stage 1: an isolated checkout so development never disturbs the tree the
-/// active generation was built from.
 pub fn new(name: &str, base: Option<&str>) -> Result<ExitCode> {
     let project = Project::open()?;
     let lock = project.store.lock()?;
@@ -30,8 +28,6 @@ pub fn new(name: &str, base: Option<&str>) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-/// Run a worktree in place. This is the fast inner loop: no test stage, no
-/// generation, no health check, no rollback — just the code as it stands.
 pub fn run(from: Option<&str>, no_build: bool, detach: bool) -> Result<ExitCode> {
     let project = Project::open()?;
 
@@ -64,7 +60,6 @@ pub fn run(from: Option<&str>, no_build: bool, detach: bool) -> Result<ExitCode>
         &ShellExecutor,
         &supervisor,
     )?;
-    // The slot is recorded before unlocking; waiting must allow other commands.
     drop(lock);
     match started {
         | WorktreeRun::Detached(state) => {
@@ -79,8 +74,6 @@ pub fn run(from: Option<&str>, no_build: bool, detach: bool) -> Result<ExitCode>
             if code != 0 {
                 eprintln!("{} worktree `{name}` exited with code {code}", ui::ERR);
             }
-            // The dev run took the slot; leaving it empty silently would look
-            // like the active generation is still serving.
             if let Ok(Some(id)) = project.store.current_id() {
                 println!("  service slot is free — `gm service start` runs generation {id} again");
             }
@@ -89,7 +82,6 @@ pub fn run(from: Option<&str>, no_build: bool, detach: bool) -> Result<ExitCode>
     }
 }
 
-/// Report taking the service slot from whatever held it.
 fn report_displacement(supervisor: &Supervisor) {
     if let Some(state) = supervisor.running() {
         println!("  {} stopping {} to take the service slot", ui::ARROW, state.source);
@@ -116,8 +108,6 @@ pub fn list() -> Result<ExitCode> {
     rows.sort();
     println!("{:<3} {:<20} {:<20} {:<10} STATE", "", "NAME", "BRANCH", "COMMIT");
     for (name, branch, commit, dirty, here) in rows {
-        // `*` marks the worktree the current directory is in — the one a bare
-        // `gm worktree run` or `gm generation build` would act on.
         let marker = if here { "*" } else { " " };
         println!("{marker:<3} {name:<20} {branch:<20} {commit:<10} {dirty}");
     }

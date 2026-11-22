@@ -57,7 +57,6 @@ pub(crate) fn alive(pid: i32) -> bool {
 
 pub(crate) fn matches(state: &RunState) -> bool { state.process_start.is_some() && identity(state.pid) == state.process_start }
 
-/// The caller still owns this unreaped child, so its PID cannot be reused.
 pub(crate) fn terminate(child: &mut Child) -> io::Result<()> {
     if unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) } == -1 {
         let error = io::Error::last_os_error();
@@ -69,8 +68,6 @@ pub(crate) fn terminate(child: &mut Child) -> io::Result<()> {
     Ok(())
 }
 
-/// Keeps a stable kernel reference while checking and signaling a Linux
-/// process.
 pub(crate) struct Process {
     #[cfg(target_os = "linux")]
     fd: File,
@@ -109,7 +106,6 @@ impl Process {
 
     pub(crate) fn signal(&self, sig: i32) -> Result<bool> {
         #[cfg(target_os = "linux")]
-        // PIDFD_SIGNAL_PROCESS_GROUP keeps the signal tied to the verified group.
         let result = unsafe {
             libc::syscall(
                 libc::SYS_pidfd_send_signal,

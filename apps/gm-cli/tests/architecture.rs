@@ -1,4 +1,3 @@
-//! Enforce dependency direction using Cargo's resolved package metadata.
 use std::process::Command;
 
 #[test]

@@ -1,8 +1,3 @@
-//! Domain types shared across the workspace.
-//!
-//! This crate owns domain types, validation and pure selection policies.
-//! It performs no I/O and knows no storage paths or serialization formats.
-
 pub mod activation;
 pub mod config;
 pub mod error;

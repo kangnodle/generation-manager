@@ -5,13 +5,6 @@ use std::{fs,
           path::{Path,
                  PathBuf}};
 
-/// Copy every declared artifact path from the build directory into the store,
-/// preserving its relative location so the run command sees the same layout it
-/// saw during the build.
-///
-/// Copying (rather than symlinking back into the worktree) is what makes a
-/// generation immutable: later development in the worktree cannot retroactively
-/// change what an old generation runs.
 pub fn collect(src_root: &Path, includes: &[PathBuf], dest_root: &Path) -> Result<Vec<PathBuf>> {
     let src_root = src_root.canonicalize().ctx("resolving artifact source")?;
     let dest_root = dest_root.canonicalize().ctx("resolving artifact destination")?;
@@ -67,13 +60,11 @@ fn copy_path(src: &Path, dest: &Path, source_root: &Path, destination_root: &Pat
         }
         ancestors.pop();
     } else {
-        // fs::copy carries the mode across, so executables stay executable.
         fs::copy(&src, dest).ctx(format!("copying {} to {}", src.display(), dest.display()))?;
     }
     Ok(())
 }
 
-/// Total size of a directory tree, for `gm generation list` reporting.
 pub fn dir_size(path: &Path) -> u64 {
     let Ok(entries) = fs::read_dir(path) else {
         return 0;

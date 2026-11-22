@@ -63,7 +63,6 @@ pub fn detect_preset(directory: &Path) -> Preset {
     })
 }
 
-/// TOML belongs to this adapter; the domain validates the decoded value.
 pub fn parse_config(text: &str) -> Result<Config> {
     let ConfigRecord(config) = toml::from_str(text).map_err(|error| gm_core::Error::Config(error.to_string()))?;
     config.validate()?;

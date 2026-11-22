@@ -1,5 +1,3 @@
-//! End-to-end tests for `gm project status` and `gm service` commands.
-
 mod common;
 
 use common::{Fixture,
@@ -65,7 +63,6 @@ fn start_refuses_while_something_already_holds_the_slot() {
 
     assert!(!output.status.success());
     let err = stderr(&output);
-    // The refusal names what is running, not just that something is.
     assert!(err.contains("already running: generation 1"), "stderr: {err}");
     assert!(err.contains("gm service restart"), "stderr: {err}");
 }
@@ -75,7 +72,6 @@ fn stop_without_a_running_service_fails() {
     let fixture = project("true");
     fixture.gm_ok(&["generation", "build", "--activate"]);
 
-    // The run command exited on its own; the slot is already free.
     let output = fixture.gm(&["service", "stop"]);
 
     assert!(!output.status.success());
@@ -132,7 +128,6 @@ fn the_directory_flag_runs_against_another_project() {
     let fixture = project("true");
     fixture.gm_ok(&["generation", "build"]);
 
-    // `-C` is what makes the tool usable from outside the project tree.
     let elsewhere = std::env::temp_dir();
     let output = Fixture::bare().gm_in(&elsewhere, &["-C", common::utf8_path(&fixture.root), "generation", "list"]);
 

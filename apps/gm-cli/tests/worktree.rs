@@ -1,6 +1,3 @@
-//! End-to-end tests for `gm project init` and `gm worktree` commands, which are
-//! the only ones that need a real git repository behind them.
-
 mod common;
 
 use common::{Fixture,
@@ -8,8 +5,6 @@ use common::{Fixture,
              stderr,
              stdout};
 
-/// A project backed by a git repository with one commit, which
-/// `git worktree add` requires.
 fn repo() -> Fixture {
     let fixture = Fixture::with(Manifest::new("true"));
     fixture.git_init();
@@ -89,7 +84,6 @@ fn init_will_not_overwrite_an_existing_manifest_by_accident() {
     let refused = fixture.gm(&["project", "init"]);
     assert!(!refused.status.success());
     assert!(stderr(&refused).contains("--force"), "stderr: {}", stderr(&refused));
-    // The original manifest survived.
     assert!(fixture.read("generation-manager.toml").contains("stop_timeout_secs"));
 
     fixture.gm_ok(&["project", "init", "--force", "--preset", "go", "--name", "svc"]);
@@ -181,8 +175,6 @@ fn worktree_remove_removes_the_worktree() {
 
 #[test]
 fn a_worktree_never_gets_a_state_directory_of_its_own() {
-    // The manifest is committed, so the worktree carries a copy of it. Commands
-    // run from inside must still resolve to the real project root.
     let fixture = repo();
     fixture.gm_ok(&["worktree", "create", "add-cache"]);
     fixture.gm_ok(&["generation", "build"]);
@@ -211,9 +203,7 @@ fn building_inside_a_worktree_needs_no_target_flag() {
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     let out = stdout(&output);
     assert!(out.contains("building from worktree `add-cache`"), "stdout: {out}");
-    // The generation records where it came from.
     assert!(out.contains("(add-cache)"), "stdout: {out}");
-    // And it was built there, not in the project root.
     assert!(worktree.join("built.marker").exists());
     assert!(!fixture.path("built.marker").exists());
 }

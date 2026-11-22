@@ -1,7 +1,6 @@
 use std::{fmt,
           path::PathBuf};
 
-/// Monotonically increasing generation number, in the NixOS sense.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 
 pub struct GenerationId(pub u64);
@@ -11,7 +10,6 @@ impl fmt::Display for GenerationId {
 }
 
 impl GenerationId {
-    /// Zero-padded so store directories sort lexicographically.
     pub fn dir_prefix(&self) -> String { format!("{:04}", self.0) }
 
     pub fn next(&self) -> GenerationId { GenerationId(self.0 + 1) }
@@ -20,27 +18,19 @@ impl GenerationId {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 
 pub enum GenerationStatus {
-    /// Built and tested, never activated.
     Built,
-    /// Activated at least once and passed its health check.
     Healthy,
-    /// Activated and rolled back because verification failed.
     Rejected,
 }
 
-/// The immutable record written next to a generation's artifacts.
 #[derive(Debug, Clone)]
 pub struct Generation {
     pub id: GenerationId,
-    /// Commit the artifacts were built from, if the source was a git checkout.
     pub commit: Option<String>,
-    /// Worktree the build came from, if any.
     pub worktree: Option<String>,
-    /// True when the build directory had uncommitted changes.
     pub dirty: bool,
     pub built_at: std::time::SystemTime,
     pub status: GenerationStatus,
-    /// Artifact paths captured into the store, relative to the generation root.
     pub artifacts: Vec<PathBuf>,
     pub note: Option<String>,
 }
@@ -58,7 +48,6 @@ impl Generation {
     }
 }
 
-/// One line of the switch audit log.
 #[derive(Debug, Clone)]
 pub struct SwitchEvent {
     pub at: std::time::SystemTime,

@@ -21,16 +21,6 @@ use std::{fs::OpenOptions,
           time::{Duration,
                  Instant}};
 
-/// Minimal supervisor for a single local process.
-///
-/// One project owns one service slot. Whatever takes the slot — an activated
-/// generation or a development worktree — records itself in `run/state.json`,
-/// so `gm project status` can always name what is running, not merely that
-/// something is.
-///
-/// The scope is deliberate: one process, one state file, one log file. A
-/// multi-service or reboot-surviving setup belongs to systemd, and this type is
-/// the seam where such a backend would slot in.
 #[derive(Clone)]
 pub struct Supervisor {
     state: Arc<dyn RunStateRepository>,
@@ -61,8 +51,6 @@ impl Supervisor {
 
     pub fn log_file(&self) -> &Path { &self.log_file }
 
-    /// A state file whose pid is no longer alive reads as stopped, so a crashed
-    /// service or an interrupted foreground run heals itself.
     pub fn status(&self) -> ServiceStatus {
         match self.read_state() {
             | Some(state) if process::alive(state.pid) && (state.process_start.is_none() || process::matches(&state)) => ServiceStatus::Running(state),
@@ -99,8 +87,6 @@ impl Supervisor {
         }
     }
 
-    /// Launch in the background, detached into its own session so the process
-    /// outlives the `gm` invocation, with output appended to the log file.
     pub fn start_detached(&self, run: &RunStage, cwd: &Path, source: RunSource) -> Result<RunState> {
         self.ensure_slot_free()?;
 
@@ -114,8 +100,6 @@ impl Supervisor {
         let mut command = self.base_command(run, cwd);
         command.stdin(Stdio::null()).stdout(Stdio::from(log)).stderr(Stdio::from(log_err));
 
-        // Detach from the terminal's process group so Ctrl-C on `gm` does not
-        // take the service down with it.
         unsafe {
             command.pre_exec(|| {
                 if libc::setsid() == -1 {
@@ -137,16 +121,6 @@ impl Supervisor {
         Ok(state)
     }
 
-    /// Start attached to the terminal. Used by `gm worktree run`: in the inner
-    /// development loop you want the output in front of you and Ctrl-C to mean
-    /// stop.
-    ///
-    /// The child owns a separate process group and, when attached to a TTY,
-    /// takes the terminal so Ctrl-C reaches the complete run.
-    ///
-    /// Spawning and waiting are separate so the caller can release the project
-    /// lock once the slot is taken, instead of holding it for the whole
-    /// session.
     pub fn spawn_foreground(&self, run: &RunStage, cwd: &Path, source: RunSource) -> Result<ForegroundRun> {
         self.ensure_slot_free()?;
 
@@ -186,8 +160,6 @@ impl Supervisor {
         command
     }
 
-    /// SIGTERM, wait up to `timeout`, then SIGKILL. Returns what was stopped so
-    /// the caller can report displacing someone else's process.
     pub fn stop(&self, timeout: Duration) -> Result<RunState> {
         let ServiceStatus::Running(state) = self.status() else {
             self.clear_state();
@@ -211,7 +183,6 @@ impl Supervisor {
         Ok(state)
     }
 
-    /// Stop if running; `Ok(None)` when the slot was already free.
     pub fn stop_if_running(&self, timeout: Duration) -> Result<Option<RunState>> {
         match self.stop(timeout) {
             | Ok(state) => Ok(Some(state)),
@@ -220,7 +191,6 @@ impl Supervisor {
         }
     }
 
-    /// Last `lines` lines of the service log.
     pub fn tail(&self, lines: usize) -> Result<String> {
         let Ok(text) = std::fs::read_to_string(&self.log_file) else {
             return Ok(String::new());
@@ -231,7 +201,6 @@ impl Supervisor {
     }
 }
 
-/// A foreground service that has taken the slot but not yet exited.
 pub struct ForegroundRun {
     child: Child,
     supervisor: Supervisor,
@@ -240,7 +209,6 @@ pub struct ForegroundRun {
 }
 
 impl ForegroundRun {
-    /// Block until the process exits, then free the slot.
     pub fn wait(mut self) -> Result<i32> {
         let status = self.child.wait().ctx("waiting for the service")?;
         if let Some(group) = self.terminal_group {
@@ -450,8 +418,6 @@ mod tests {
             | Err(error) => panic!("failed to wait for first foreground process: {error}"),
         };
         let running = fixture.supervisor.running();
-        // Keep cleanup independent of the shared file, which the regression can
-        // erase.
         let replacement = match Process::open(&second) {
             | Ok(process) => process,
             | Err(error) => panic!("failed to open replacement process: {error}"),

@@ -1,8 +1,3 @@
-//! Shared fixtures for the CLI integration tests.
-//!
-//! Every test drives the real `gm` binary against a throwaway project in the
-//! temp directory, so what is exercised is the tool as a user meets it.
-
 #![allow(dead_code)]
 
 use gm_core::run::RunState;
@@ -17,11 +12,6 @@ pub const GM: &str = env!("CARGO_BIN_EXE_gm");
 
 static COUNTER: AtomicU32 = AtomicU32::new(0);
 
-/// Builder for `generation-manager.toml`.
-///
-/// The defaults describe the smallest project that still exercises the whole
-/// pipeline: a build stage that produces one artifact, and a health check that
-/// passes.
 pub struct Manifest {
     build: String,
     test: Option<String>,
@@ -58,7 +48,6 @@ impl Manifest {
         self
     }
 
-    /// Shell command run from the generation payload; exit 0 means healthy.
     pub fn health(mut self, cmd: &str) -> Manifest {
         self.health = Some(cmd.to_string());
         self
@@ -93,8 +82,6 @@ pub struct Fixture {
 }
 
 impl Fixture {
-    /// A directory with no manifest, for testing `gm project init` and
-    /// discovery failure.
     pub fn bare() -> Fixture {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let root = std::env::temp_dir().join(format!("gm-it-{}-{n}", std::process::id()));
@@ -117,8 +104,6 @@ impl Fixture {
     }
 
     pub fn set_manifest(&self, manifest: &Manifest) { self.write("generation-manager.toml", &manifest.render()); }
-
-    // ------------------------------------------------------------ filesystem
 
     pub fn path(&self, relative: &str) -> PathBuf { self.root.join(relative) }
 
@@ -146,8 +131,6 @@ impl Fixture {
 
     pub fn worktree_dir(&self, name: &str) -> PathBuf { self.root.join(".gm/worktrees").join(name) }
 
-    /// A worktree directory without git behind it. Enough for the commands that
-    /// only need the checkout to exist.
     pub fn fake_worktree(&self, name: &str) -> PathBuf {
         let path = self.worktree_dir(name);
         match std::fs::create_dir_all(&path) {
@@ -157,7 +140,6 @@ impl Fixture {
         path
     }
 
-    /// The payload directory of a generation, as `gm` laid it out.
     pub fn generation_payload(&self, id: u64) -> PathBuf { self.root.join(format!(".gm/generations/{id:04}/root")) }
 
     pub fn run_state(&self) -> Option<RunState> {
@@ -172,11 +154,8 @@ impl Fixture {
         }
     }
 
-    // ------------------------------------------------------------------- git
-
     pub fn git(&self, dir: &Path, args: &[&str]) -> Output { Command::new("git").args(args).current_dir(dir).output().expect("failed to run git") }
 
-    /// Initialise a repository with one commit, which `git worktree add` needs.
     pub fn git_init(&self) {
         self.write(".gitignore", ".gm/\nbuilt.marker\npayload.txt\n");
         self.git(&self.root, &["init", "-q", "-b", "main"]);
@@ -186,13 +165,10 @@ impl Fixture {
         self.git(&self.root, &["commit", "-qm", "initial"]);
     }
 
-    // -------------------------------------------------------------------- gm
-
     pub fn gm(&self, args: &[&str]) -> Output { self.gm_in(&self.root, args) }
 
     pub fn gm_in(&self, cwd: &Path, args: &[&str]) -> Output { Command::new(GM).args(args).current_dir(cwd).output().expect("failed to run the gm binary") }
 
-    /// Run `gm` and fail the test if it did not succeed.
     pub fn gm_ok(&self, args: &[&str]) -> Output {
         let output = self.gm(args);
         assert!(
@@ -208,7 +184,6 @@ impl Fixture {
 
 impl Drop for Fixture {
     fn drop(&mut self) {
-        // Tests that leave a detached process must not outlive their directory.
         let _ = self.gm(&["service", "stop"]);
         let _ = std::fs::remove_dir_all(&self.root);
     }

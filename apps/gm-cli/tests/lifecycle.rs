@@ -1,5 +1,3 @@
-//! End-to-end tests for `gm generation` commands.
-
 mod common;
 
 use common::{Fixture,
@@ -9,9 +7,6 @@ use common::{Fixture,
 use gm_core::{generation::GenerationId,
               run::RunSource};
 
-/// A project whose generation content is decided by `source.txt` at build time,
-/// and whose health check reads that content back out of the frozen payload.
-/// That lets a test choose, per generation, whether activation should succeed.
 fn project() -> Fixture {
     let fixture = Fixture::with(
         Manifest::new("exec sleep 300")
@@ -39,7 +34,6 @@ fn build_creates_a_generation_without_activating_it() {
 
     let listed = stdout(&fixture.gm_ok(&["generation", "list"]));
     assert!(listed.contains("built"), "generations: {listed}");
-    // Nothing is marked active, and nothing is running.
     assert!(!listed.contains('*'), "generations: {listed}");
     assert!(fixture.run_state().is_none());
 }
@@ -55,7 +49,6 @@ fn a_failing_test_stage_consumes_no_generation_number() {
     let listed = stdout(&fixture.gm_ok(&["generation", "list"]));
     assert!(listed.contains("no generations yet"), "generations: {listed}");
 
-    // The next successful build still gets number 1.
     let ok = Fixture::with(Manifest::new("true"));
     assert!(stdout(&ok.gm_ok(&["generation", "build"])).contains("generation 1 built"));
 }
@@ -105,7 +98,6 @@ fn an_older_generation_keeps_the_artifacts_it_was_built_with() {
     let fixture = project();
     fixture.gm_ok(&["generation", "build"]);
 
-    // Later development must not reach back into a frozen generation.
     fixture.write("source.txt", "good, but changed\n");
     fixture.gm_ok(&["generation", "build"]);
 
@@ -129,7 +121,6 @@ fn rollback_returns_to_the_previous_generation() {
         }
     );
 
-    // Rolling back again from generation 1 has nowhere to go.
     let exhausted = fixture.gm(&["generation", "rollback"]);
     assert!(!exhausted.status.success());
     assert!(stderr(&exhausted).contains("no older generation"), "stderr: {}", stderr(&exhausted));
@@ -158,7 +149,6 @@ fn a_failed_health_check_rolls_back_automatically() {
     let fixture = project();
     fixture.gm_ok(&["generation", "build", "--activate"]);
 
-    // The next generation builds and tests fine but fails verification.
     fixture.write("source.txt", "bad\n");
     let failed = fixture.gm(&["generation", "build", "--activate"]);
 
@@ -213,7 +203,6 @@ fn prune_keeps_the_active_generation_and_its_rollback_target() {
     let listed = stdout(&fixture.gm_ok(&["generation", "list"]));
     assert!(!listed.contains(" 1 ") && !listed.contains(" 2 "), "generations: {listed}");
     assert!(listed.contains(" 3 ") && listed.contains(" 4 "), "generations: {listed}");
-    // The store directories are gone too, not just the numbered links.
     assert!(!fixture.path(".gm/generations/0001").exists());
     assert_eq!(store_entry_count(&fixture), 2);
 }

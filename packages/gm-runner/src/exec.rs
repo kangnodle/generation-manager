@@ -5,11 +5,6 @@ use std::{collections::BTreeMap,
           path::Path,
           process::Command};
 
-/// Run a shell stage with inherited stdio, so build output streams live.
-///
-/// Commands go through `sh -c` on purpose: the manifest holds whatever the
-/// project's own toolchain needs (`cargo build`, `npm ci && npm run build`,
-/// `make`), and the tool stays language-agnostic.
 pub fn run_stage(stage: &str, cmd: &str, dir: &Path, env: &BTreeMap<String, String>) -> Result<()> {
     let status = Command::new("sh")
         .arg("-c")
@@ -38,7 +33,6 @@ impl gm_application::StageExecutor for ShellExecutor {
     }
 }
 
-/// Run a command and capture stdout, discarding stderr. Used for git queries.
 pub fn capture(program: &str, args: &[&str], dir: &Path) -> Result<String> {
     let output = Command::new(program)
         .args(args)

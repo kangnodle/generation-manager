@@ -18,20 +18,14 @@ use gm_store::{Layout,
 use std::{path::PathBuf,
           process::ExitCode};
 
-/// A resolved project: manifest, opened store, and the worktree the command was
-/// invoked from, if any.
 pub struct Project {
     pub config: Config,
     pub store: Store,
     pub root: PathBuf,
-    /// Set when the current directory is inside `.gm/worktrees/<name>`.
     pub worktree: Option<String>,
 }
 
 impl Project {
-    /// Find `generation-manager.toml` from the current directory upwards.
-    /// Standing inside a worktree resolves to the real project root, not
-    /// the worktree.
     pub fn open() -> Result<Project> {
         let cwd = std::env::current_dir()?;
         let found = gm_store::discover_project(&cwd)?;
@@ -44,11 +38,8 @@ impl Project {
         })
     }
 
-    /// Which worktree a command should act on: an explicit positional target
-    /// wins, otherwise the one the developer is standing in.
     pub fn select_worktree(&self, from: Option<&str>) -> Option<String> { gm_core::select_worktree(from, self.worktree.as_deref()) }
 
-    /// Resolve a worktree name to its path, failing if it does not exist.
     pub fn worktree_path(&self, name: &str) -> Result<PathBuf> {
         let path = self.store.layout().worktree(name)?;
         if !path.is_dir() {

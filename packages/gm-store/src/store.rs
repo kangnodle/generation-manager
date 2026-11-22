@@ -24,16 +24,13 @@ pub struct StoreRepository<'a> {
     lock: &'a ProjectLock,
 }
 
-/// A generation as found on disk.
 #[derive(Debug, Clone)]
 pub struct GenerationEntry {
     pub meta: Generation,
-    /// The store directory (`.gm/store/0007-a1b2c3d`).
     pub dir: PathBuf,
 }
 
 impl GenerationEntry {
-    /// Directory the service actually runs from.
     pub fn payload(&self) -> PathBuf { Layout::generation_payload(&self.dir) }
 }
 
@@ -43,7 +40,6 @@ pub struct Store {
 }
 
 impl Store {
-    /// Open the store, creating the state skeleton if this is the first run.
     pub fn open(layout: Layout) -> Result<Store> {
         for dir in [layout.state(), layout.store(), layout.generations(), layout.worktrees(), layout.run_dir()] {
             fs::create_dir_all(&dir).ctx(format!("creating {}", dir.display()))?;
@@ -85,9 +81,6 @@ impl Store {
         Ok(entries)
     }
 
-    // ---------------------------------------------------------------- reading
-
-    /// Reserve published numbers even when their metadata cannot be read.
     fn generation_ids(&self) -> Result<Vec<GenerationId>> {
         let generations = self.layout.generations();
         let mut ids = Vec::new();
@@ -105,8 +98,6 @@ impl Store {
         Ok(ids)
     }
 
-    /// All generations, ordered oldest first. Unreadable entries are skipped so
-    /// one corrupt directory cannot break `gm generation list`.
     pub fn list(&self) -> Result<Vec<GenerationEntry>> {
         let mut ids = self.generation_ids()?;
         ids.sort_unstable();
@@ -140,7 +131,6 @@ impl Store {
         })
     }
 
-    /// Follow `generations/NNNN` to its store directory.
     fn resolve(&self, id: GenerationId) -> Result<PathBuf> {
         let link = self.layout.generation_link(id);
         let target = fs::read_link(&link).map_err(|_| Error::NoSuchGeneration(id.0))?;
@@ -152,7 +142,6 @@ impl Store {
         dir.canonicalize().map_err(|_| Error::NoSuchGeneration(id.0))
     }
 
-    /// The active generation, or `None` before the first switch.
     pub fn current_id(&self) -> Result<Option<GenerationId>> {
         let link = self.layout.current_link();
         let target = match fs::read_link(&link) {
@@ -168,8 +157,6 @@ impl Store {
         self.get(id)
     }
 
-    /// The generation a bare `gm generation rollback` would select: the highest
-    /// id below the active one, mirroring `nixos-rebuild --rollback`.
     pub fn rollback_target(&self) -> Result<GenerationId> {
         let current = self.current_id()?;
         let ids: Vec<_> = self.list()?.into_iter().map(|entry| entry.meta.id).collect();
@@ -180,16 +167,11 @@ impl Store {
         })
     }
 
-    // ---------------------------------------------------------------- writing
-
     fn next_id(&self) -> Result<GenerationId> {
         let ids = self.generation_ids()?;
         Ok(next_generation_id(&ids))
     }
 
-    /// Create the store directory for the next generation and hand back the
-    /// payload directory to populate. Nothing is visible as a generation until
-    /// [`Store::commit`] runs, so a failed build leaves no numbered entry.
     pub fn stage(&self, lock: &ProjectLock, commit: Option<&str>) -> Result<StagedGeneration> {
         self.ensure_locked(lock)?;
         let id = self.next_id()?;
@@ -207,7 +189,6 @@ impl Store {
         })
     }
 
-    /// Write the metadata and publish `generations/NNNN`.
     pub fn commit(&self, lock: &ProjectLock, staged: StagedGeneration, meta: Generation) -> Result<GenerationEntry> {
         self.ensure_locked(lock)?;
         let link = self.layout.generation_link(staged.id);
@@ -233,7 +214,6 @@ impl Store {
         })
     }
 
-    /// Discard a staged generation that never made it to `commit`.
     pub fn discard(&self, lock: &ProjectLock, staged: StagedGeneration) -> Result<()> {
         self.ensure_locked(lock)?;
         match fs::remove_dir_all(&staged.dir) {
@@ -256,9 +236,6 @@ impl Store {
         write_atomic(&meta_path, text.as_bytes())
     }
 
-    /// Repoint `current` at `id`. The temp-symlink-then-rename dance is what
-    /// makes this atomic: `ln -sfn` unlinks first and leaves a window where the
-    /// project has no active generation.
     pub fn switch(&self, lock: &ProjectLock, id: GenerationId, reason: &str) -> Result<()> { self.switch_at(lock, id, reason, SystemTime::now()) }
 
     pub fn switch_at(&self, lock: &ProjectLock, id: GenerationId, reason: &str, at: SystemTime) -> Result<()> {
@@ -323,8 +300,6 @@ impl Store {
             .collect())
     }
 
-    /// Delete all but the `keep` most recent generations. The active generation
-    /// and its rollback target are always retained.
     pub fn gc(&self, lock: &ProjectLock, keep: usize) -> Result<Vec<GenerationId>> {
         self.ensure_locked(lock)?;
         let all = self.list()?;
@@ -402,7 +377,6 @@ impl gm_application::GenerationRepository for StoreRepository<'_> {
     }
 }
 
-/// A generation directory that exists on disk but is not yet numbered.
 #[derive(Debug)]
 pub struct StagedGeneration {
     pub id: GenerationId,

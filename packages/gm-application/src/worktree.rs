@@ -49,8 +49,6 @@ pub enum WorktreeRun<F> {
     Detached(RunState),
 }
 
-/// Take the slot without publishing a generation or verifying development code.
-/// The caller releases its project lock before waiting for a foreground run.
 pub fn run_worktree<R: DevelopmentRuntime>(
     request: RunWorktree<'_>,
     config: &Config,

@@ -37,7 +37,6 @@
   dependencies = ["format"]
 
 [tasks.watch-run]
-  # `cargo install cargo-watch`로 설치
   command       = "cargo"
   args          = ["watch", "-x", "run"]
   install_crate = "cargo-watch"

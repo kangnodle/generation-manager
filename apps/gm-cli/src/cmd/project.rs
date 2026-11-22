@@ -3,8 +3,6 @@ use crate::{cmd::Project,
 use anyhow::Result;
 use std::process::ExitCode;
 
-/// Show a project-wide overview. Service-only inspection lives under
-/// `gm service status`.
 pub fn status() -> Result<ExitCode> {
     let project = Project::open()?;
     let supervisor = project.supervisor();

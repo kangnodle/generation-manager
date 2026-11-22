@@ -1,10 +1,3 @@
-//! End-to-end tests for `gm worktree run`.
-//!
-//! These cover the contract the command promises: it runs the worktree's own
-//! code, in the foreground, with the build stage but no verification, and it
-//! takes the single service slot from whoever held it — recording itself as the
-//! source so `gm project status` can still say what is running.
-
 mod common;
 
 use common::{Fixture,
@@ -16,9 +9,6 @@ use gm_core::{generation::GenerationId,
 
 const WORKTREE: &str = "add-cache";
 
-/// A project with one worktree that needs no git behind it: `gm worktree run`
-/// only requires the directory to exist, so the fixtures stay fast and
-/// hermetic.
 fn project(run_cmd: &str) -> Fixture {
     let fixture = Fixture::new(run_cmd);
     fixture.fake_worktree(WORKTREE);
@@ -33,7 +23,6 @@ fn runs_the_worktree_code_in_the_foreground() {
     let output = fixture.gm(&["worktree", "run", WORKTREE]);
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
-    // The child inherits stdio, so its output really is the command's output.
     assert!(stdout(&output).contains("hello from the worktree"), "stdout: {}", stdout(&output));
 }
 
@@ -63,7 +52,6 @@ fn runs_the_build_stage_first() {
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert!(stdout(&output).contains("built"), "stdout: {}", stdout(&output));
-    // The build ran in the worktree, not in the project root.
     assert!(fixture.worktree_dir(WORKTREE).join("built.marker").exists());
     assert!(!fixture.path("built.marker").exists());
 }
@@ -88,7 +76,6 @@ fn defaults_to_the_worktree_you_are_standing_in() {
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     let out = stdout(&output);
     assert!(out.contains(&format!("running worktree `{WORKTREE}`")), "stdout: {out}");
-    // The process really ran with the worktree as its working directory.
     let printed = match worktree.canonicalize() {
         | Ok(path) => path,
         | Err(error) => panic!("failed to resolve worktree path {worktree:?}: {error}"),
@@ -137,8 +124,6 @@ fn a_detached_run_records_the_worktree_as_the_running_source() {
     assert!(state.detached);
     assert!(state.source.is_dev());
 
-    // `gm project status` names the source rather than only reporting that a
-    // pid exists.
     let status = stdout(&fixture.gm(&["project", "status"]));
     assert!(status.contains("worktree `add-cache` (dev, unverified)"), "status: {status}");
 
@@ -153,15 +138,12 @@ fn a_foreground_run_frees_the_slot_when_it_exits() {
 
     fixture.gm(&["worktree", "run", WORKTREE]);
 
-    // The state file is cleared, so nothing claims to be running afterwards.
     assert!(fixture.run_state().is_none());
     assert!(stdout(&fixture.gm(&["project", "status"])).contains("stopped"));
 }
 
 #[test]
 fn skips_the_test_stage() {
-    // A worktree run is for code that may not work yet; failing tests must not
-    // stand in the way.
     let fixture = Fixture::with(Manifest::new("true").test("exit 1"));
     fixture.fake_worktree(WORKTREE);
 
@@ -183,7 +165,6 @@ fn a_dev_run_and_a_generation_hand_the_slot_back_and_forth() {
         }
     );
 
-    // Taking the slot for development is announced, not silent.
     let taken = fixture.gm_ok(&["worktree", "run", WORKTREE, "--detach"]);
     assert!(
         stdout(&taken).contains("stopping generation 1 to take the service slot"),
@@ -192,7 +173,6 @@ fn a_dev_run_and_a_generation_hand_the_slot_back_and_forth() {
     );
     assert!(fixture.recorded_run().source.is_dev());
 
-    // And so is taking it back.
     let restored = fixture.gm_ok(&["generation", "activate", "1"]);
     assert!(stdout(&restored).contains("stopping worktree `add-cache`"), "stdout: {}", stdout(&restored));
     assert_eq!(

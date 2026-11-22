@@ -1,6 +1,3 @@
-//! `gm` — drive a change from an isolated worktree, through build and test,
-//! into a numbered generation you can switch to and roll back from.
-
 mod cmd;
 mod ui;
 
@@ -19,8 +16,7 @@ use std::{path::PathBuf,
                   misbehaves."
 )]
 struct Cli {
-    /// Run as if started in this directory.
-    #[arg(short = 'C', long, global = true, value_name = "DIR")]
+    #[arg(short = 'C', long, global = true, value_name = "DIR", help = "Run as if started in this directory")]
     directory: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -29,129 +25,110 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// Manage project configuration and inspect the project overview.
-    #[command(subcommand)]
+    #[command(subcommand, about = "Manage project configuration and inspect the project overview")]
     Project(ProjectCommand),
 
-    /// Manage development worktrees.
-    #[command(subcommand)]
+    #[command(subcommand, about = "Manage development worktrees")]
     Worktree(WorktreeCommand),
 
-    /// Build, activate, inspect, and prune generations.
-    #[command(subcommand)]
+    #[command(subcommand, about = "Build, activate, inspect, and prune generations")]
     Generation(GenerationCommand),
 
-    /// Inspect and control the service process.
-    #[command(subcommand)]
+    #[command(subcommand, about = "Inspect and control the service process")]
     Service(ServiceCommand),
 }
 
 #[derive(Subcommand)]
 enum ProjectCommand {
-    /// Create generation-manager.toml in the current directory.
+    #[command(about = "Create generation-manager.toml in the current directory")]
     Init {
-        /// Language preset: rust, node, python, go, generic.
-        #[arg(long)]
+        #[arg(long, help = "Language preset: rust, node, python, go, generic")]
         preset: Option<String>,
-        /// Project name (defaults to the directory name).
-        #[arg(long)]
+        #[arg(long, help = "Project name (defaults to the directory name)")]
         name: Option<String>,
-        /// Overwrite an existing manifest.
-        #[arg(long)]
+        #[arg(long, help = "Overwrite an existing manifest")]
         force: bool,
     },
 
-    /// Show the project, active generation, and service state.
+    #[command(about = "Show the project, active generation, and service state")]
     Status,
 }
 
 #[derive(Subcommand)]
 enum WorktreeCommand {
-    /// Create a worktree and a branch for it.
+    #[command(about = "Create a worktree and a branch for it")]
     Create {
         name: String,
-        /// Base commit or branch for the new branch.
-        #[arg(long)]
+        #[arg(long, help = "Base commit or branch for the new branch")]
         base: Option<String>,
     },
-    /// List worktrees managed by this project.
+    #[command(about = "List worktrees managed by this project")]
     List,
-    /// Run a worktree's code directly, without creating a generation.
+    #[command(about = "Run a worktree's code directly, without creating a generation")]
     Run {
-        /// Worktree to run (defaults to the one you are standing in).
-        #[arg(value_name = "WORKTREE")]
+        #[arg(value_name = "WORKTREE", help = "Worktree to run (defaults to the one you are standing in)")]
         worktree: Option<String>,
-        /// Skip the build stage before running.
-        #[arg(long)]
+        #[arg(long, help = "Skip the build stage before running")]
         no_build: bool,
-        /// Run in the background instead of attaching to the terminal.
-        #[arg(long)]
+        #[arg(long, help = "Run in the background instead of attaching to the terminal")]
         detach: bool,
     },
-    /// Remove a worktree.
+    #[command(about = "Remove a worktree")]
     Remove {
         name: String,
-        /// Remove even with uncommitted changes.
-        #[arg(long)]
+        #[arg(long, help = "Remove even with uncommitted changes")]
         force: bool,
     },
 }
 
 #[derive(Subcommand)]
 enum GenerationCommand {
-    /// Build and test a checkout into a new generation.
+    #[command(about = "Build and test a checkout into a new generation")]
     Build {
-        /// Build from this worktree (defaults to the current worktree or
-        /// project root).
-        #[arg(value_name = "WORKTREE")]
+        #[arg(value_name = "WORKTREE", help = "Build from this worktree (defaults to the current worktree or project root)")]
         worktree: Option<String>,
-        /// Free-form note stored with the generation.
-        #[arg(long)]
+        #[arg(long, help = "Free-form note stored with the generation")]
         note: Option<String>,
-        /// Activate the generation immediately after a successful build.
-        #[arg(long)]
+        #[arg(long, help = "Activate the generation immediately after a successful build")]
         activate: bool,
     },
 
-    /// List generations.
+    #[command(about = "List generations")]
     List,
 
-    /// Activate a generation and verify it.
+    #[command(about = "Activate a generation and verify it")]
     Activate {
-        /// Generation number (defaults to the newest).
-        #[arg(value_name = "GENERATION")]
+        #[arg(value_name = "GENERATION", help = "Generation number (defaults to the newest)")]
         generation: Option<u64>,
     },
 
-    /// Return to an older generation.
+    #[command(about = "Return to an older generation")]
     Rollback {
-        /// Target generation (defaults to the one before the active).
-        #[arg(value_name = "GENERATION")]
+        #[arg(value_name = "GENERATION", help = "Target generation (defaults to the one before the active)")]
         generation: Option<u64>,
     },
 
-    /// Show the activation log.
+    #[command(about = "Show the activation log")]
     History,
 
-    /// Delete old generations.
+    #[command(about = "Delete old generations")]
     Prune {
-        /// Number of recent generations to keep.
-        #[arg(long, default_value_t = 5)]
+        #[arg(long, default_value_t = 5, help = "Number of recent generations to keep")]
         keep: usize,
     },
 }
 
 #[derive(Subcommand)]
 enum ServiceCommand {
-    /// Show the service process and its source.
+    #[command(about = "Show the service process and its source")]
     Status,
-    /// Start the service from the active generation.
+    #[command(about = "Start the service from the active generation")]
     Start,
-    /// Stop the running service.
+    #[command(about = "Stop the running service")]
     Stop,
-    /// Stop then start the active generation.
+    #[command(about = "Stop then start the active generation")]
     Restart,
-    /// Show the tail of the service log.
+    #[command(about = "Show the tail of the service log")]
     Logs {
         #[arg(short = 'n', long, default_value_t = 40)]
         lines: usize,

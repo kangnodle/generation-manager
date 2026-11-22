@@ -10,11 +10,6 @@ pub fn validate_worktree_name(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// The declarative project manifest.
-///
-/// Everything language-specific lives in shell commands, so the tool stays
-/// agnostic: a Rust service, a Node service and a Go service differ only in the
-/// strings below.
 #[derive(Debug, Clone)]
 pub struct Config {
     pub project: Project,
@@ -30,7 +25,6 @@ pub struct Project {
     pub name: String,
 }
 
-/// A shell stage. An empty `cmd` means "skip this stage".
 #[derive(Debug, Clone, Default)]
 pub struct BuildStage {
     pub cmd: String,
@@ -41,18 +35,15 @@ impl BuildStage {
     pub fn is_empty(&self) -> bool { self.cmd.trim().is_empty() }
 }
 
-/// Paths (relative to the build directory) copied into the immutable store.
 #[derive(Debug, Clone, Default)]
 pub struct Artifacts {
     pub include: Vec<PathBuf>,
 }
 
-/// How the activated generation is executed. One local process.
 #[derive(Debug, Clone)]
 pub struct RunStage {
     pub cmd: String,
     pub env: BTreeMap<String, String>,
-    /// Seconds to wait for a graceful SIGTERM before escalating to SIGKILL.
     pub stop_timeout_secs: u64,
 }
 
@@ -60,14 +51,10 @@ impl RunStage {
     pub const DEFAULT_STOP_TIMEOUT_SECS: u64 = 10;
 }
 
-/// Post-activation verification. If it fails, the switch is reverted.
 #[derive(Debug, Clone, Default)]
 pub struct HealthCheck {
-    /// `GET` this URL and accept any 2xx/3xx response. Plain HTTP only.
     pub http: Option<String>,
-    /// Accept as healthy once a TCP connection to `host:port` succeeds.
     pub tcp: Option<String>,
-    /// Accept as healthy once this shell command exits 0.
     pub cmd: Option<String>,
     pub timeout_secs: u64,
     pub interval_secs: u64,
@@ -77,7 +64,6 @@ impl HealthCheck {
     pub const DEFAULT_INTERVAL_SECS: u64 = 1;
     pub const DEFAULT_TIMEOUT_SECS: u64 = 30;
 
-    /// A manifest with no probe configured activates without verification.
     pub fn is_configured(&self) -> bool { self.http.is_some() || self.tcp.is_some() || self.cmd.is_some() }
 }
 
@@ -102,8 +88,6 @@ impl Config {
     }
 }
 
-/// Starting points for `gm project init`, so the multi-language case is a
-/// one-liner.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Preset {
     Rust,
@@ -129,7 +113,6 @@ impl std::str::FromStr for Preset {
 }
 
 impl Preset {
-    /// Choose a preset from a side-effect-free snapshot of marker files.
     pub fn detect(files: DetectedFiles) -> Preset {
         if files.cargo_toml {
             Preset::Rust

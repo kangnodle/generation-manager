@@ -33,7 +33,6 @@ pub trait GenerationRepository {
     fn commit(&self, staged: StagedGeneration, generation: Generation) -> PortResult<StoredGeneration>;
     fn set_status(&self, id: GenerationId, status: GenerationStatus) -> PortResult<()>;
     fn switch(&self, id: GenerationId, reason: &str, at: SystemTime) -> PortResult<()>;
-    /// Restore the pointer even when audit logging is unavailable.
     fn restore(&self, id: Option<GenerationId>) -> PortResult<()>;
 }
 
@@ -74,9 +73,6 @@ pub trait ServiceRuntime {
     fn start_detached(&self, run: &RunStage, cwd: &Path, source: RunSource) -> PortResult<RunState>;
 }
 
-/// Persist the service slot. Completion must clear it only while holding the
-/// project lock and only if it still belongs to the completed run.
-/// Callers hold the project lock for write/clear; clear_if_matches acquires it.
 pub trait RunStateRepository: Send + Sync {
     fn read(&self) -> Option<RunState>;
     fn write(&self, state: &RunState) -> PortResult<()>;

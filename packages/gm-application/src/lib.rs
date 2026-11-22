@@ -1,8 +1,3 @@
-//! Application use cases and the narrow ports they require.
-//!
-//! This crate owns orchestration but no filesystem, process, network, Git, or
-//! wall-clock implementation. Those capabilities are supplied by adapters.
-
 mod activate;
 mod build;
 mod error;

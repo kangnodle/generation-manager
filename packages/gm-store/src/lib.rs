@@ -1,13 +1,3 @@
-//! The immutable generation store and its atomic activation pointer.
-//!
-//! The filesystem is the source of truth: there is no database. A generation is
-//! a directory under `store/`, a numbered symlink under `generations/`, and the
-//! `current` symlink that selects one of them. Switching is a `rename(2)` over
-//! `current`, which is atomic, so a crash mid-switch can never leave the
-//! project pointing at nothing.
-//! Also owns project discovery, serialization and locked run-state cleanup;
-//! process control is supplied by a separate application adapter.
-
 mod error;
 pub mod layout;
 pub mod lock;

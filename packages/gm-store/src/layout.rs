@@ -2,7 +2,6 @@ use gm_core::generation::GenerationId;
 use std::path::{Path,
                 PathBuf};
 
-/// Every path the tool owns, derived from the project root.
 #[derive(Debug, Clone)]
 pub struct Layout {
     root: PathBuf,
@@ -15,10 +14,8 @@ impl Layout {
         }
     }
 
-    /// The directory containing `generation-manager.toml`.
     pub fn project_root(&self) -> &Path { &self.root }
 
-    /// `.gm` — all tool-managed state.
     pub fn state(&self) -> PathBuf { self.root.join(STATE_DIR) }
 
     pub fn lock_file(&self) -> PathBuf { self.state().join("lock") }
@@ -34,36 +31,27 @@ impl Layout {
 
     pub fn generations(&self) -> PathBuf { self.state().join("generations") }
 
-    /// `generations/0007` — the stable, numbered handle for a generation.
     pub fn generation_link(&self, id: GenerationId) -> PathBuf { self.generations().join(id.dir_prefix()) }
 
-    /// `current` — the activation pointer replaced atomically on switch.
     pub fn current_link(&self) -> PathBuf { self.state().join("current") }
 
     pub fn history(&self) -> PathBuf { self.state().join("history.jsonl") }
 
     pub fn run_dir(&self) -> PathBuf { self.state().join("run") }
 
-    /// Records both the pid and what it is running. A bare pid file cannot
-    /// distinguish an activated generation from a development worktree.
     pub fn run_state(&self) -> PathBuf { self.run_dir().join("state.json") }
 
     pub fn log_file(&self) -> PathBuf { self.run_dir().join("service.log") }
 
-    /// Where a generation's artifacts live inside its store directory.
     pub fn generation_payload(dir: &Path) -> PathBuf { dir.join("root") }
 
     pub fn generation_meta(dir: &Path) -> PathBuf { dir.join("meta.json") }
 }
 
-/// Name of the per-project manifest.
 pub const MANIFEST: &str = "generation-manager.toml";
-/// Directory holding all tool-managed state, relative to the project root.
 pub const STATE_DIR: &str = ".gm";
-/// Directory holding development worktrees, relative to [`STATE_DIR`].
 pub const WORKTREES: &str = "worktrees";
 
-/// Recognise `<root>/.gm/worktrees/<name>/...`, innermost match first.
 pub fn worktree_context(start: &Path) -> Option<(PathBuf, String)> {
     for dir in start.ancestors() {
         let parent = dir.parent()?;
@@ -112,7 +100,6 @@ mod tests {
         assert!(context("/srv/demo").is_none());
         assert!(context("/srv/demo/.gm").is_none());
         assert!(context("/srv/demo/.gm/store/0001-abc").is_none());
-        // The worktrees directory itself is not a worktree.
         assert!(context("/srv/demo/.gm/worktrees").is_none());
     }
 

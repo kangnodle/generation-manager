@@ -1,4 +1,3 @@
-//! The composition root: concrete adapters meet application use cases here.
 use super::Project;
 use anyhow::Result;
 use gm_application::{Activation,

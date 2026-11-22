@@ -1,7 +1,3 @@
-//! Behaviour tests for the activation pointer: these cover the invariants the
-//! rest of the tool relies on — numbering, atomic switching, rollback target
-//! selection, and GC never eating something you still need.
-
 use gm_application::RunStateRepository;
 use gm_core::generation::{Generation,
                           GenerationId,
@@ -169,7 +165,6 @@ fn completed_run_cleanup_waits_for_the_lock_and_preserves_a_replacement() {
         | Err(error) => panic!("failed to receive cleanup start: {error}"),
     }
     assert!(rx.recv_timeout(std::time::Duration::from_millis(30)).is_err());
-    // Reused PIDs also require the process identity and run timestamp to match.
     let second = gm_core::RunState {
         process_start: Some("replacement-process".into()),
         ..first.clone()
@@ -264,7 +259,6 @@ fn switching_moves_the_current_pointer_and_records_history() {
 
     switch_generation(&store, &lock, second);
     assert_eq!(current_id(&store), Some(second));
-    // The payload really follows the pointer.
     let current = match store.current() {
         | Ok(entry) => entry,
         | Err(error) => panic!("failed to load current generation: {error}"),
