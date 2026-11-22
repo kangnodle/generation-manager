@@ -28,7 +28,7 @@ fn project(run_cmd: &str) -> Fixture {
 #[test]
 fn runs_the_worktree_code_in_the_foreground() {
     let fixture = project("cat worktree.marker");
-    std::fs::write(fixture.worktree_dir(WORKTREE).join("worktree.marker"), "hello from the worktree").unwrap();
+    fixture.write(fixture.worktree_dir(WORKTREE).join("worktree.marker"), "hello from the worktree");
 
     let output = fixture.gm(&["worktree", "run", WORKTREE]);
 
@@ -89,8 +89,11 @@ fn defaults_to_the_worktree_you_are_standing_in() {
     let out = stdout(&output);
     assert!(out.contains(&format!("running worktree `{WORKTREE}`")), "stdout: {out}");
     // The process really ran with the worktree as its working directory.
-    let printed = worktree.canonicalize().unwrap();
-    assert!(out.contains(printed.to_str().unwrap()), "stdout: {out}");
+    let printed = match worktree.canonicalize() {
+        | Ok(path) => path,
+        | Err(error) => panic!("failed to resolve worktree path {worktree:?}: {error}"),
+    };
+    assert!(out.contains(common::utf8_path(&printed)), "stdout: {out}");
 }
 
 #[test]
@@ -174,7 +177,7 @@ fn a_dev_run_and_a_generation_hand_the_slot_back_and_forth() {
     let built = fixture.gm_ok(&["generation", "build", "--activate"]);
     assert!(built.status.success());
     assert_eq!(
-        fixture.run_state().unwrap().source,
+        fixture.recorded_run().source,
         RunSource::Generation {
             id: GenerationId(1)
         }
@@ -187,13 +190,13 @@ fn a_dev_run_and_a_generation_hand_the_slot_back_and_forth() {
         "stdout: {}",
         stdout(&taken)
     );
-    assert!(fixture.run_state().unwrap().source.is_dev());
+    assert!(fixture.recorded_run().source.is_dev());
 
     // And so is taking it back.
     let restored = fixture.gm_ok(&["generation", "activate", "1"]);
     assert!(stdout(&restored).contains("stopping worktree `add-cache`"), "stdout: {}", stdout(&restored));
     assert_eq!(
-        fixture.run_state().unwrap().source,
+        fixture.recorded_run().source,
         RunSource::Generation {
             id: GenerationId(1)
         }

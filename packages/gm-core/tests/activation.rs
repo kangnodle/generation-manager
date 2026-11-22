@@ -4,7 +4,12 @@ use gm_core::{GenerationId,
                            ActivationEvent as Event,
                            ActivationState}};
 
-fn advance(state: ActivationState, event: Event) -> ActivationState { state.transition(event).unwrap() }
+fn advance(state: ActivationState, event: Event) -> ActivationState {
+    match state.transition(event) {
+        | Ok(next_state) => next_state,
+        | Err(error) => panic!("activation transition failed: {error}"),
+    }
+}
 
 #[test]
 fn activation_requires_health_and_persisted_status_before_success() {

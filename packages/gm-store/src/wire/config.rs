@@ -93,7 +93,7 @@ mod tests {
 
     #[test]
     fn manifest_keeps_the_defaults_for_a_partially_configured_health_check() {
-        let config = parse_config(
+        let config = match parse_config(
             r#"
 [project]
 name = "demo"
@@ -104,8 +104,10 @@ cmd = "./start"
 [health]
 cmd = "./check"
 "#,
-        )
-        .unwrap();
+        ) {
+            | Ok(config) => config,
+            | Err(error) => panic!("failed to parse test manifest: {error}"),
+        };
         assert_eq!(config.run.stop_timeout_secs, 10);
         assert_eq!(config.health.timeout_secs, 30);
         assert_eq!(config.health.interval_secs, 1);
@@ -115,7 +117,7 @@ cmd = "./check"
 
     #[test]
     fn manifest_keeps_the_defaults_for_an_absent_health_check() {
-        let config = parse_config(
+        let config = match parse_config(
             r#"
 [project]
 name = "demo"
@@ -123,8 +125,10 @@ name = "demo"
 [run]
 cmd = "./start"
 "#,
-        )
-        .unwrap();
+        ) {
+            | Ok(config) => config,
+            | Err(error) => panic!("failed to parse test manifest: {error}"),
+        };
         assert!(!config.health.is_configured());
         assert_eq!(config.health.timeout_secs, 0);
         assert_eq!(config.health.interval_secs, 0);

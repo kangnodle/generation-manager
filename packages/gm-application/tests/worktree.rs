@@ -103,7 +103,12 @@ impl WorktreeControl for Effects {
         self.call("remove")
     }
 
-    fn prune(&self, _: &Path) { self.call("prune").unwrap(); }
+    fn prune(&self, _: &Path) {
+        match self.call("prune") {
+            | Ok(()) => (),
+            | Err(error) => panic!("failed to prune test worktrees: {error}"),
+        };
+    }
 }
 
 fn request(build: bool, detach: bool) -> RunWorktree<'static> {
@@ -118,20 +123,30 @@ fn request(build: bool, detach: bool) -> RunWorktree<'static> {
 #[test]
 fn development_runs_build_only_and_return_an_unwaited_foreground_handle() {
     let effects = Effects::default();
-    let result = run_worktree(request(true, false), &Preset::Generic.template("demo"), &effects, &effects).unwrap();
+    let result = match run_worktree(request(true, false), &Preset::Generic.template("demo"), &effects, &effects) {
+        | Ok(run) => run,
+        | Err(error) => panic!("failed to run worktree in foreground: {error}"),
+    };
     let WorktreeRun::Foreground(handle) = result else {
         panic!("expected foreground")
     };
     assert_eq!(*effects.calls.borrow(), ["stop", "build", "spawn"]);
-    assert_eq!(handle.wait().unwrap(), 7);
+    match handle.wait() {
+        | Ok(code) => assert_eq!(code, 7),
+        | Err(error) => panic!("failed to wait for foreground worktree: {error}"),
+    }
 }
 
 #[test]
 fn detached_runs_can_skip_build_and_failures_prevent_launching() {
     let config = Preset::Generic.template("demo");
     let effects = Effects::default();
+    let run = match run_worktree(request(false, true), &config, &effects, &effects) {
+        | Ok(run) => run,
+        | Err(error) => panic!("failed to start detached worktree: {error}"),
+    };
     assert!(matches!(
-        run_worktree(request(false, true), &config, &effects, &effects).unwrap(),
+        run,
         WorktreeRun::Detached(RunState {
             pid: 42,
             ..
@@ -151,7 +166,10 @@ fn detached_runs_can_skip_build_and_failures_prevent_launching() {
 #[test]
 fn worktree_preconditions_prevent_git_mutations_and_failed_remove_skips_prune() {
     let effects = Effects::default();
-    create_worktree("feature", Some("main"), &effects, &effects).unwrap();
+    match create_worktree("feature", Some("main"), &effects, &effects) {
+        | Ok(_) => (),
+        | Err(error) => panic!("failed to create feature worktree: {error}"),
+    };
     assert_eq!(*effects.calls.borrow(), ["add"]);
     assert!(remove_worktree("feature", true, &effects, &effects).is_err());
     assert!(create_worktree("../outside", Some("main"), &effects, &effects).is_err());
@@ -161,7 +179,10 @@ fn worktree_preconditions_prevent_git_mutations_and_failed_remove_skips_prune() 
         ..Default::default()
     };
     assert!(create_worktree("feature", Some("main"), &effects, &effects).is_err());
-    remove_worktree("feature", true, &effects, &effects).unwrap();
+    match remove_worktree("feature", true, &effects, &effects) {
+        | Ok(_) => (),
+        | Err(error) => panic!("failed to remove feature worktree: {error}"),
+    };
     assert_eq!(*effects.calls.borrow(), ["remove", "prune"]);
     let effects = Effects {
         exists: true,

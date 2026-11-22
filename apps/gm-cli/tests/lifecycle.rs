@@ -23,6 +23,13 @@ fn project() -> Fixture {
     fixture
 }
 
+fn store_entry_count(fixture: &Fixture) -> usize {
+    match std::fs::read_dir(fixture.path(".gm/store")) {
+        | Ok(entries) => entries.count(),
+        | Err(error) => panic!("failed to list generation store: {error}"),
+    }
+}
+
 #[test]
 fn build_creates_a_generation_without_activating_it() {
     let fixture = project();
@@ -75,7 +82,7 @@ fn activate_uses_the_newest_generation_and_marks_it_healthy() {
     assert!(listed.contains("healthy"), "generations: {listed}");
     assert!(listed.contains('*'), "generations: {listed}");
     assert_eq!(
-        fixture.run_state().unwrap().source,
+        fixture.recorded_run().source,
         RunSource::Generation {
             id: GenerationId(1)
         }
@@ -102,11 +109,8 @@ fn an_older_generation_keeps_the_artifacts_it_was_built_with() {
     fixture.write("source.txt", "good, but changed\n");
     fixture.gm_ok(&["generation", "build"]);
 
-    assert_eq!(std::fs::read_to_string(fixture.generation_payload(1).join("payload.txt")).unwrap(), "good\n");
-    assert_eq!(
-        std::fs::read_to_string(fixture.generation_payload(2).join("payload.txt")).unwrap(),
-        "good, but changed\n"
-    );
+    assert_eq!(fixture.read(fixture.generation_payload(1).join("payload.txt")), "good\n");
+    assert_eq!(fixture.read(fixture.generation_payload(2).join("payload.txt")), "good, but changed\n");
 }
 
 #[test]
@@ -119,7 +123,7 @@ fn rollback_returns_to_the_previous_generation() {
     let rolled = fixture.gm_ok(&["generation", "rollback"]);
     assert!(stdout(&rolled).contains("generation 1 is live"), "stdout: {}", stdout(&rolled));
     assert_eq!(
-        fixture.run_state().unwrap().source,
+        fixture.recorded_run().source,
         RunSource::Generation {
             id: GenerationId(1)
         }
@@ -142,7 +146,7 @@ fn rollback_can_target_a_specific_generation() {
     fixture.gm_ok(&["generation", "rollback", "1"]);
 
     assert_eq!(
-        fixture.run_state().unwrap().source,
+        fixture.recorded_run().source,
         RunSource::Generation {
             id: GenerationId(1)
         }
@@ -166,7 +170,7 @@ fn a_failed_health_check_rolls_back_automatically() {
     let listed = stdout(&fixture.gm_ok(&["generation", "list"]));
     assert!(listed.contains("rejected"), "generations: {listed}");
     assert_eq!(
-        fixture.run_state().unwrap().source,
+        fixture.recorded_run().source,
         RunSource::Generation {
             id: GenerationId(1)
         },
@@ -211,7 +215,7 @@ fn prune_keeps_the_active_generation_and_its_rollback_target() {
     assert!(listed.contains(" 3 ") && listed.contains(" 4 "), "generations: {listed}");
     // The store directories are gone too, not just the numbered links.
     assert!(!fixture.path(".gm/generations/0001").exists());
-    assert_eq!(std::fs::read_dir(fixture.path(".gm/store")).unwrap().count(), 2);
+    assert_eq!(store_entry_count(&fixture), 2);
 }
 
 #[test]
@@ -239,17 +243,24 @@ fn a_history_write_failure_restores_the_previous_service() {
     let fixture = project();
     fixture.gm_ok(&["generation", "build", "--activate"]);
     fixture.gm_ok(&["generation", "build"]);
-    std::fs::remove_file(fixture.path(".gm/history.jsonl")).unwrap();
-    std::fs::create_dir(fixture.path(".gm/history.jsonl")).unwrap();
+    match std::fs::remove_file(fixture.path(".gm/history.jsonl")) {
+        | Ok(()) => (),
+        | Err(error) => panic!("failed to remove history file: {error}"),
+    };
+    match std::fs::create_dir(fixture.path(".gm/history.jsonl")) {
+        | Ok(()) => (),
+        | Err(error) => panic!("failed to replace history file with a directory: {error}"),
+    };
 
     let failed = fixture.gm(&["generation", "activate", "2"]);
     assert!(!failed.status.success());
+    let current = match std::fs::read_link(fixture.path(".gm/current")) {
+        | Ok(target) => target,
+        | Err(error) => panic!("failed to read current generation link: {error}"),
+    };
+    assert_eq!(current, std::path::Path::new("generations/0001"));
     assert_eq!(
-        std::fs::read_link(fixture.path(".gm/current")).unwrap(),
-        std::path::Path::new("generations/0001")
-    );
-    assert_eq!(
-        fixture.run_state().unwrap().source,
+        fixture.recorded_run().source,
         RunSource::Generation {
             id: GenerationId(1)
         }
@@ -261,12 +272,15 @@ fn a_history_write_failure_restores_the_previous_service() {
 fn artifact_symlinks_are_frozen_as_independent_files() {
     let fixture = Fixture::with(Manifest::new("true").artifacts(&["linked"]));
     fixture.write("original", "old");
-    std::os::unix::fs::symlink(fixture.path("original"), fixture.path("linked")).unwrap();
+    match std::os::unix::fs::symlink(fixture.path("original"), fixture.path("linked")) {
+        | Ok(()) => (),
+        | Err(error) => panic!("failed to create artifact symlink: {error}"),
+    };
     fixture.gm_ok(&["generation", "build"]);
     fixture.write("original", "new");
     let frozen = fixture.generation_payload(1).join("linked");
     assert!(!frozen.is_symlink());
-    assert_eq!(std::fs::read_to_string(frozen).unwrap(), "old");
+    assert_eq!(fixture.read(frozen), "old");
 }
 
 #[test]
@@ -277,10 +291,16 @@ fn artifact_symlinks_cannot_escape_or_form_directory_cycles() {
         let fixture = Fixture::with(Manifest::new("true").artifacts(&["linked"]));
         fixture.write("tree/file", "content");
         if cycle {
-            std::os::unix::fs::symlink(fixture.path("tree"), fixture.path("tree/back")).unwrap();
+            match std::os::unix::fs::symlink(fixture.path("tree"), fixture.path("tree/back")) {
+                | Ok(()) => (),
+                | Err(error) => panic!("failed to create cyclic symlink: {error}"),
+            };
         }
         let target = if cycle { fixture.path("tree") } else { outside.path("secret") };
-        std::os::unix::fs::symlink(target, fixture.path("linked")).unwrap();
+        match std::os::unix::fs::symlink(target, fixture.path("linked")) {
+            | Ok(()) => (),
+            | Err(error) => panic!("failed to create test symlink: {error}"),
+        };
         let failed = fixture.gm(&["generation", "build"]);
         assert!(!failed.status.success());
         assert!(stderr(&failed).contains(if cycle { "directory cycle" } else { "escapes the build directory" }));
@@ -294,5 +314,5 @@ fn copying_the_project_root_cannot_copy_the_store_into_itself() {
     let failed = fixture.gm(&["generation", "build"]);
     assert!(!failed.status.success());
     assert!(stderr(&failed).contains("overlaps the generation destination"));
-    assert_eq!(std::fs::read_dir(fixture.path(".gm/store")).unwrap().count(), 0);
+    assert_eq!(store_entry_count(&fixture), 0);
 }

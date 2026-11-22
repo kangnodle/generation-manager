@@ -295,7 +295,7 @@ mod tests {
             starts: RefCell::new(Vec::new()),
             stops: Cell::new(0),
         };
-        let result = activate_generation(
+        let result = match activate_generation(
             GenerationId(2),
             "test",
             &Preset::Generic.template("app"),
@@ -305,8 +305,10 @@ mod tests {
                 fail_for: None,
             },
             &FixedClock,
-        )
-        .unwrap();
+        ) {
+            | Ok(outcome) => outcome,
+            | Err(error) => panic!("activation did not return an outcome: {error}"),
+        };
 
         assert!(matches!(
             result,
@@ -327,7 +329,7 @@ mod tests {
             starts: RefCell::new(Vec::new()),
             stops: Cell::new(0),
         };
-        let result = activate_generation(
+        let result = match activate_generation(
             GenerationId(2),
             "test",
             &Preset::Generic.template("app"),
@@ -337,8 +339,10 @@ mod tests {
                 fail_for: Some(PathBuf::from("/generation/2")),
             },
             &FixedClock,
-        )
-        .unwrap();
+        ) {
+            | Ok(outcome) => outcome,
+            | Err(error) => panic!("activation did not return an outcome: {error}"),
+        };
 
         assert!(matches!(
             result,
@@ -365,7 +369,7 @@ mod tests {
                 starts: RefCell::new(Vec::new()),
                 stops: Cell::new(0),
             };
-            let result = activate_generation(
+            let result = match activate_generation(
                 GenerationId(2),
                 "test",
                 &Preset::Generic.template("app"),
@@ -375,8 +379,10 @@ mod tests {
                     fail_for: fail_health.then(|| PathBuf::from("/generation/2")),
                 },
                 &FixedClock,
-            )
-            .unwrap();
+            ) {
+                | Ok(outcome) => outcome,
+                | Err(error) => panic!("activation did not return an outcome: {error}"),
+            };
             assert!(matches!(
                 result,
                 Activation::RolledBack {
@@ -398,7 +404,7 @@ mod tests {
             starts: RefCell::new(Vec::new()),
             stops: Cell::new(0),
         };
-        activate_generation(
+        match activate_generation(
             GenerationId(2),
             "test",
             &Preset::Generic.template("app"),
@@ -408,8 +414,10 @@ mod tests {
                 fail_for: None,
             },
             &FixedClock,
-        )
-        .unwrap();
+        ) {
+            | Ok(outcome) => outcome,
+            | Err(error) => panic!("activation did not return an outcome: {error}"),
+        };
         assert_eq!(repository.current.get(), None);
     }
     #[test]
@@ -421,10 +429,16 @@ mod tests {
             stops: Cell::new(0),
         };
         let config = Preset::Generic.template("app");
-        let started = crate::start_service(&config, &repository, &runtime, false).unwrap();
+        let started = match crate::start_service(&config, &repository, &runtime, false) {
+            | Ok(started) => started,
+            | Err(error) => panic!("failed to start service: {error}"),
+        };
         assert_eq!(started.state.pid, 1);
         assert_eq!(runtime.stops.get(), 0);
-        crate::start_service(&config, &repository, &runtime, true).unwrap();
+        match crate::start_service(&config, &repository, &runtime, true) {
+            | Ok(started) => started,
+            | Err(error) => panic!("failed to restart service: {error}"),
+        };
         assert_eq!(runtime.stops.get(), 1);
         assert_eq!(repository.current.get(), Some(GenerationId(1)));
         assert!(repository.switches.borrow().is_empty());

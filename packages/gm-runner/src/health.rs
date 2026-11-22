@@ -187,17 +187,37 @@ fn split_url(url: &str) -> Option<(String, String)> {
 #[cfg(test)]
 mod tests {
     use super::split_url;
+    use std::net::{SocketAddr,
+                   TcpListener};
+
+    fn http_listener() -> (TcpListener, SocketAddr) {
+        let listener = match TcpListener::bind("127.0.0.1:0") {
+            | Ok(listener) => listener,
+            | Err(error) => panic!("failed to bind test HTTP server: {error}"),
+        };
+        let address = match listener.local_addr() {
+            | Ok(address) => address,
+            | Err(error) => panic!("failed to get test HTTP server address: {error}"),
+        };
+        (listener, address)
+    }
 
     #[test]
     fn parses_url_with_port_and_path() {
-        let (authority, path) = split_url("http://127.0.0.1:8080/healthz").unwrap();
+        let (authority, path) = match split_url("http://127.0.0.1:8080/healthz") {
+            | Some(parts) => parts,
+            | None => panic!("expected a valid HTTP URL: http://127.0.0.1:8080/healthz"),
+        };
         assert_eq!(authority, "127.0.0.1:8080");
         assert_eq!(path, "/healthz");
     }
 
     #[test]
     fn defaults_port_and_path() {
-        let (authority, path) = split_url("http://localhost").unwrap();
+        let (authority, path) = match split_url("http://localhost") {
+            | Some(parts) => parts,
+            | None => panic!("expected a valid HTTP URL: http://localhost"),
+        };
         assert_eq!(authority, "localhost:80");
         assert_eq!(path, "/");
     }
@@ -220,58 +240,85 @@ mod tests {
 
     #[test]
     fn a_silent_http_server_cannot_hold_activation_past_its_deadline() {
-        use std::{net::TcpListener,
-                  time::{Duration,
-                         Instant}};
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/", listener.local_addr().unwrap());
+        use std::time::{Duration,
+                        Instant};
+        let (listener, address) = http_listener();
+        let url = format!("http://{address}/");
         let server = std::thread::spawn(move || {
-            let (_stream, _) = listener.accept().unwrap();
+            let (_stream, _) = match listener.accept() {
+                | Ok(connection) => connection,
+                | Err(error) => panic!("test HTTP server failed to accept connection: {error}"),
+            };
             std::thread::sleep(Duration::from_millis(300));
         });
         let start = Instant::now();
         assert!(!super::http_ok(&url, start + Duration::from_millis(100)));
         assert!(start.elapsed() < Duration::from_millis(250));
-        server.join().unwrap();
+        match server.join() {
+            | Ok(()) => (),
+            | Err(panic) => std::panic::resume_unwind(panic),
+        }
     }
 
     #[test]
     fn http_status_line_can_arrive_in_multiple_reads() {
         use std::{io::{Read,
                        Write},
-                  net::TcpListener,
                   time::{Duration,
                          Instant}};
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/health", listener.local_addr().unwrap());
+        let (listener, address) = http_listener();
+        let url = format!("http://{address}/health");
         let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let (mut stream, _) = match listener.accept() {
+                | Ok(connection) => connection,
+                | Err(error) => panic!("test HTTP server failed to accept connection: {error}"),
+            };
             let mut request = [0; 1024];
-            assert!(stream.read(&mut request).unwrap() > 0);
-            stream.write_all(b"HTTP/1.0 ").unwrap();
+            match stream.read(&mut request) {
+                | Ok(bytes) => assert!(bytes > 0, "expected an HTTP request"),
+                | Err(error) => panic!("failed to read HTTP request: {error}"),
+            }
+            match stream.write_all(b"HTTP/1.0 ") {
+                | Ok(()) => (),
+                | Err(error) => panic!("failed to send HTTP version: {error}"),
+            };
             std::thread::sleep(Duration::from_millis(50));
-            stream.write_all(b"200 OK\r\nContent-Length: 0\r\n\r\n").unwrap();
+            match stream.write_all(b"200 OK\r\nContent-Length: 0\r\n\r\n") {
+                | Ok(()) => (),
+                | Err(error) => panic!("failed to send remaining HTTP response: {error}"),
+            };
         });
         assert!(super::http_ok(&url, Instant::now() + Duration::from_secs(2)));
-        server.join().unwrap();
+        match server.join() {
+            | Ok(()) => (),
+            | Err(panic) => std::panic::resume_unwind(panic),
+        }
     }
 
     #[test]
     fn http_status_line_has_a_size_limit() {
         use std::{io::{Read,
                        Write},
-                  net::TcpListener,
                   time::{Duration,
                          Instant}};
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let url = format!("http://{}/", listener.local_addr().unwrap());
+        let (listener, address) = http_listener();
+        let url = format!("http://{address}/");
         let server = std::thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let (mut stream, _) = match listener.accept() {
+                | Ok(connection) => connection,
+                | Err(error) => panic!("test HTTP server failed to accept connection: {error}"),
+            };
             let mut request = [0; 1024];
-            assert!(stream.read(&mut request).unwrap() > 0);
+            match stream.read(&mut request) {
+                | Ok(bytes) => assert!(bytes > 0, "expected an HTTP request"),
+                | Err(error) => panic!("failed to read HTTP request: {error}"),
+            }
             let _ = stream.write_all(&vec![b'x'; 8193]);
         });
         assert!(!super::http_ok(&url, Instant::now() + Duration::from_secs(2)));
-        server.join().unwrap();
+        match server.join() {
+            | Ok(()) => (),
+            | Err(panic) => std::panic::resume_unwind(panic),
+        }
     }
 }

@@ -51,14 +51,23 @@ fn rust_preset_runs_the_binary_at_its_preserved_artifact_path() {
     fixture.write("generation-manager.toml", &manifest);
     fixture.write("target/release/app", "#!/bin/sh\necho preset-ok\n");
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(fixture.path("target/release/app"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    match std::fs::set_permissions(fixture.path("target/release/app"), std::fs::Permissions::from_mode(0o755)) {
+        | Ok(()) => (),
+        | Err(error) => panic!("failed to make preset binary executable: {error}"),
+    };
     fixture.gm_ok(&["generation", "build"]);
-    let config = gm_store::parse_config(&fixture.read("generation-manager.toml")).unwrap();
-    let output = std::process::Command::new("sh")
+    let config = match gm_store::parse_config(&fixture.read("generation-manager.toml")) {
+        | Ok(config) => config,
+        | Err(error) => panic!("failed to parse preset manifest: {error}"),
+    };
+    let output = match std::process::Command::new("sh")
         .args(["-c", &config.run.cmd])
         .current_dir(fixture.generation_payload(1))
         .output()
-        .unwrap();
+    {
+        | Ok(output) => output,
+        | Err(error) => panic!("failed to run built preset binary: {error}"),
+    };
     assert!(output.status.success());
     assert!(stdout(&output).contains("preset-ok"));
 }
@@ -183,7 +192,11 @@ fn a_worktree_never_gets_a_state_directory_of_its_own() {
 
     assert!(status.contains("add-cache (you are here)"), "status: {status}");
     assert!(status.contains("1 generation(s)"), "the root's generations are visible: {status}");
-    assert!(status.contains(fixture.root.canonicalize().unwrap().to_str().unwrap()), "status: {status}");
+    let root = match fixture.root.canonicalize() {
+        | Ok(path) => path,
+        | Err(error) => panic!("failed to resolve fixture root: {error}"),
+    };
+    assert!(status.contains(common::utf8_path(&root)), "status: {status}");
     assert!(!worktree.join(".gm").exists(), "a second state directory appeared");
 }
 

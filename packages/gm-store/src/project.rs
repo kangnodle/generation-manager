@@ -81,8 +81,14 @@ mod tests {
 
     #[test]
     fn configuration_roundtrips_and_is_validated_at_the_boundary() {
-        let rendered = render_config(&Preset::Rust.template("demo")).unwrap();
-        let parsed = parse_config(&rendered).unwrap();
+        let rendered = match render_config(&Preset::Rust.template("demo")) {
+            | Ok(toml) => toml,
+            | Err(error) => panic!("failed to render Rust preset: {error}"),
+        };
+        let parsed = match parse_config(&rendered) {
+            | Ok(config) => config,
+            | Err(error) => panic!("failed to parse rendered Rust preset: {error}"),
+        };
         assert_eq!(parsed.project.name, "demo");
         assert_eq!(parsed.run.cmd, "./target/release/demo");
         assert!(parse_config(&rendered.replace("./target/release/demo", "")).is_err());

@@ -99,7 +99,10 @@ impl Fixture {
         let n = COUNTER.fetch_add(1, Ordering::SeqCst);
         let root = std::env::temp_dir().join(format!("gm-it-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(&root).unwrap();
+        match std::fs::create_dir_all(&root) {
+            | Ok(()) => (),
+            | Err(error) => panic!("failed to create fixture directory {root:?}: {error}"),
+        };
         Fixture {
             root,
         }
@@ -113,21 +116,33 @@ impl Fixture {
         fixture
     }
 
-    pub fn set_manifest(&self, manifest: &Manifest) { std::fs::write(self.root.join("generation-manager.toml"), manifest.render()).unwrap(); }
+    pub fn set_manifest(&self, manifest: &Manifest) { self.write("generation-manager.toml", &manifest.render()); }
 
     // ------------------------------------------------------------ filesystem
 
     pub fn path(&self, relative: &str) -> PathBuf { self.root.join(relative) }
 
-    pub fn write(&self, relative: &str, contents: &str) {
-        let path = self.path(relative);
+    pub fn write(&self, relative: impl AsRef<Path>, contents: &str) {
+        let path = self.root.join(relative);
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
+            match std::fs::create_dir_all(parent) {
+                | Ok(()) => (),
+                | Err(error) => panic!("failed to create fixture directory {parent:?}: {error}"),
+            };
         }
-        std::fs::write(path, contents).unwrap();
+        match std::fs::write(&path, contents) {
+            | Ok(()) => (),
+            | Err(error) => panic!("failed to write fixture file {path:?}: {error}"),
+        };
     }
 
-    pub fn read(&self, relative: &str) -> String { std::fs::read_to_string(self.path(relative)).unwrap() }
+    pub fn read(&self, relative: impl AsRef<Path>) -> String {
+        let path = self.root.join(relative);
+        match std::fs::read_to_string(&path) {
+            | Ok(contents) => contents,
+            | Err(error) => panic!("failed to read fixture file {path:?}: {error}"),
+        }
+    }
 
     pub fn worktree_dir(&self, name: &str) -> PathBuf { self.root.join(".gm/worktrees").join(name) }
 
@@ -135,7 +150,10 @@ impl Fixture {
     /// only need the checkout to exist.
     pub fn fake_worktree(&self, name: &str) -> PathBuf {
         let path = self.worktree_dir(name);
-        std::fs::create_dir_all(&path).unwrap();
+        match std::fs::create_dir_all(&path) {
+            | Ok(()) => (),
+            | Err(error) => panic!("failed to create worktree directory {path:?}: {error}"),
+        };
         path
     }
 
@@ -145,6 +163,13 @@ impl Fixture {
     pub fn run_state(&self) -> Option<RunState> {
         use gm_application::RunStateRepository;
         gm_store::FileRunState::new(gm_store::Layout::new(&self.root)).read()
+    }
+
+    pub fn recorded_run(&self) -> RunState {
+        match self.run_state() {
+            | Some(state) => state,
+            | None => panic!("expected a recorded run in {:?}", self.root),
+        }
     }
 
     // ------------------------------------------------------------------- git
@@ -186,6 +211,13 @@ impl Drop for Fixture {
         // Tests that leave a detached process must not outlive their directory.
         let _ = self.gm(&["service", "stop"]);
         let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+pub fn utf8_path(path: &Path) -> &str {
+    match path.to_str() {
+        | Some(text) => text,
+        | None => panic!("expected a UTF-8 fixture path, got {path:?}"),
     }
 }
 

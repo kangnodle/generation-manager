@@ -133,12 +133,18 @@ mod tests {
     #[test]
     fn legacy_generation_metadata_keeps_its_schema() {
         let json = r#"{"id":12,"built_at":"2026-08-28T00:00:00.123Z","status":"built"}"#;
-        let record: GenerationRecord = serde_json::from_str(json).unwrap();
+        let record: GenerationRecord = match serde_json::from_str(json) {
+            | Ok(record) => record,
+            | Err(error) => panic!("failed to decode legacy generation metadata: {error}"),
+        };
         assert_eq!(record.0.id, GenerationId(12));
         assert_eq!(record.0.status, GenerationStatus::Built);
         assert!(!record.0.dirty);
         assert!(record.0.artifacts.is_empty());
-        let encoded = serde_json::to_value(record).unwrap();
+        let encoded = match serde_json::to_value(record) {
+            | Ok(value) => value,
+            | Err(error) => panic!("failed to encode record: {error}"),
+        };
         assert_eq!(encoded["id"], 12);
         assert_eq!(encoded["built_at"], "2026-08-28T00:00:00.123Z");
         assert_eq!(encoded["status"], "built");
@@ -151,15 +157,29 @@ mod tests {
             r#"{"at":"2026-08-28T00:00:00Z","to":1,"reason":"first"}"#,
             r#"{"at":"2026-08-28T00:00:01Z","from":1,"to":2,"reason":"test"}"#,
         ] {
-            let record: SwitchEventRecord = serde_json::from_str(json).unwrap();
-            assert_eq!(serde_json::to_value(record).unwrap(), serde_json::from_str::<serde_json::Value>(json).unwrap());
+            let record: SwitchEventRecord = match serde_json::from_str(json) {
+                | Ok(record) => record,
+                | Err(error) => panic!("failed to decode legacy switch event: {error}"),
+            };
+            let encoded = match serde_json::to_value(record) {
+                | Ok(value) => value,
+                | Err(error) => panic!("failed to encode record: {error}"),
+            };
+            let expected: serde_json::Value = match serde_json::from_str(json) {
+                | Ok(value) => value,
+                | Err(error) => panic!("invalid switch event JSON fixture: {error}"),
+            };
+            assert_eq!(encoded, expected);
         }
     }
 
     #[test]
     fn legacy_run_state_defaults_the_process_identity_and_detach_flag() {
         let json = r#"{"source":{"kind":"generation","id":3},"pid":41,"started_at":"2026-08-28T00:00:00Z"}"#;
-        let record: RunStateRecord = serde_json::from_str(json).unwrap();
+        let record: RunStateRecord = match serde_json::from_str(json) {
+            | Ok(record) => record,
+            | Err(error) => panic!("failed to decode legacy run state: {error}"),
+        };
         assert_eq!(
             record.0.source,
             RunSource::Generation {
@@ -168,7 +188,10 @@ mod tests {
         );
         assert_eq!(record.0.process_start, None);
         assert!(!record.0.detached);
-        let encoded = serde_json::to_value(record).unwrap();
+        let encoded = match serde_json::to_value(record) {
+            | Ok(value) => value,
+            | Err(error) => panic!("failed to encode record: {error}"),
+        };
         assert_eq!(encoded["source"], serde_json::json!({"kind": "generation", "id": 3}));
         assert_eq!(encoded["started_at"], "2026-08-28T00:00:00Z");
     }

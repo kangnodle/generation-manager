@@ -86,16 +86,23 @@ mod tests {
     use super::*;
     fn context(path: &str) -> Option<(PathBuf, String)> { worktree_context(Path::new(path)) }
 
+    fn managed_worktree(path: &str) -> (PathBuf, String) {
+        match context(path) {
+            | Some(worktree) => worktree,
+            | None => panic!("expected a managed worktree at {path}"),
+        }
+    }
+
     #[test]
     fn recognises_a_managed_worktree() {
-        let (root, name) = context("/srv/demo/.gm/worktrees/add-cache").unwrap();
+        let (root, name) = managed_worktree("/srv/demo/.gm/worktrees/add-cache");
         assert_eq!(root, Path::new("/srv/demo"));
         assert_eq!(name, "add-cache");
     }
 
     #[test]
     fn recognises_a_subdirectory_of_a_worktree() {
-        let (root, name) = context("/srv/demo/.gm/worktrees/add-cache/src/api").unwrap();
+        let (root, name) = managed_worktree("/srv/demo/.gm/worktrees/add-cache/src/api");
         assert_eq!(root, Path::new("/srv/demo"));
         assert_eq!(name, "add-cache");
     }
@@ -117,7 +124,7 @@ mod tests {
 
     #[test]
     fn picks_the_innermost_worktree_when_nested() {
-        let (root, name) = context("/srv/demo/.gm/worktrees/outer/.gm/worktrees/inner/src").unwrap();
+        let (root, name) = managed_worktree("/srv/demo/.gm/worktrees/outer/.gm/worktrees/inner/src");
         assert_eq!(root, Path::new("/srv/demo/.gm/worktrees/outer"));
         assert_eq!(name, "inner");
     }

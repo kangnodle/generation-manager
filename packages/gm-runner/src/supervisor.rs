@@ -309,11 +309,20 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct MemoryState(Arc<Mutex<(Option<RunState>, bool)>>);
+    impl MemoryState {
+        fn lock(&self) -> std::sync::MutexGuard<'_, (Option<RunState>, bool)> {
+            match self.0.lock() {
+                | Ok(slot) => slot,
+                | Err(error) => panic!("test run state lock poisoned: {error}"),
+            }
+        }
+    }
+
     impl RunStateRepository for MemoryState {
-        fn read(&self) -> Option<RunState> { self.0.lock().unwrap().0.clone() }
+        fn read(&self) -> Option<RunState> { self.lock().0.clone() }
 
         fn write(&self, state: &RunState) -> gm_application::PortResult<()> {
-            let mut slot = self.0.lock().unwrap();
+            let mut slot = self.lock();
             if slot.1 {
                 return Err(std::io::Error::other("injected state write failure").into());
             }
@@ -321,10 +330,10 @@ mod tests {
             Ok(())
         }
 
-        fn clear(&self) { self.0.lock().unwrap().0 = None; }
+        fn clear(&self) { self.lock().0 = None; }
 
         fn clear_if_matches(&self, state: &RunState) -> gm_application::PortResult<()> {
-            let mut slot = self.0.lock().unwrap();
+            let mut slot = self.lock();
             if slot
                 .0
                 .as_ref()
@@ -347,7 +356,10 @@ mod tests {
     impl Fixture {
         fn new() -> Self {
             let root = std::env::temp_dir().join(format!("gm-supervisor-{}-{}", std::process::id(), COUNTER.fetch_add(1, Ordering::Relaxed)));
-            std::fs::create_dir_all(&root).unwrap();
+            match std::fs::create_dir_all(&root) {
+                | Ok(()) => (),
+                | Err(error) => panic!("failed to create supervisor fixture {root:?}: {error}"),
+            };
             let state = MemoryState::default();
             let supervisor = Supervisor::new(state.clone(), root.join("service.log"));
             Self {
@@ -385,10 +397,10 @@ mod tests {
             "sh -c 'trap \"\" TERM; echo $$ > child.pid; exec sleep 30' & wait",
         ] {
             let fixture = Fixture::new();
-            fixture
-                .supervisor
-                .start_detached(&fixture.run(command), &fixture.root, fixture.source())
-                .unwrap();
+            match fixture.supervisor.start_detached(&fixture.run(command), &fixture.root, fixture.source()) {
+                | Ok(run) => run,
+                | Err(error) => panic!("failed to start detached test process: {error}"),
+            };
             let marker = fixture.root.join("child.pid");
             let deadline = Instant::now() + Duration::from_secs(2);
             let child: i32 = loop {
@@ -400,7 +412,10 @@ mod tests {
                 assert!(Instant::now() < deadline, "child did not start");
                 std::thread::sleep(Duration::from_millis(10));
             };
-            fixture.supervisor.stop(Duration::from_millis(100)).unwrap();
+            match fixture.supervisor.stop(Duration::from_millis(100)) {
+                | Ok(_) => (),
+                | Err(error) => panic!("failed to stop supervised process: {error}"),
+            };
             assert!(!process::alive(child));
         }
     }
@@ -409,31 +424,56 @@ mod tests {
     fn an_old_foreground_waiter_does_not_clear_a_replacement_run() {
         let fixture = Fixture::new();
         let first = {
-            fixture
+            match fixture
                 .supervisor
                 .spawn_foreground(&fixture.run("exec sleep 30"), &fixture.root, fixture.source())
-                .unwrap()
+            {
+                | Ok(run) => run,
+                | Err(error) => panic!("failed to start foreground test process: {error}"),
+            }
         };
         let second = {
-            fixture.supervisor.stop(Duration::ZERO).unwrap();
-            fixture
+            match fixture.supervisor.stop(Duration::ZERO) {
+                | Ok(_) => (),
+                | Err(error) => panic!("failed to stop supervised process: {error}"),
+            };
+            match fixture
                 .supervisor
                 .start_detached(&fixture.run("exec sleep 30"), &fixture.root, fixture.source())
-                .unwrap()
+            {
+                | Ok(run) => run,
+                | Err(error) => panic!("failed to start detached test process: {error}"),
+            }
         };
-        first.wait().unwrap();
+        match first.wait() {
+            | Ok(_) => (),
+            | Err(error) => panic!("failed to wait for first foreground process: {error}"),
+        };
         let running = fixture.supervisor.running();
         // Keep cleanup independent of the shared file, which the regression can
         // erase.
-        Process::open(&second).unwrap().signal(libc::SIGKILL).unwrap();
-        assert_eq!(running.unwrap().pid, second.pid);
+        let replacement = match Process::open(&second) {
+            | Ok(process) => process,
+            | Err(error) => panic!("failed to open replacement process: {error}"),
+        };
+        match replacement.signal(libc::SIGKILL) {
+            | Ok(_) => (),
+            | Err(error) => panic!("failed to signal replacement process: {error}"),
+        };
+        match running {
+            | Some(state) => assert_eq!(state.pid, second.pid),
+            | None => panic!("expected replacement process to remain recorded"),
+        }
     }
 
     #[test]
     fn a_failed_state_write_terminates_and_reaps_the_child() {
         let fixture = Fixture::new();
-        fixture.state.0.lock().unwrap().1 = true;
-        let mut child = Command::new("sh").args(["-c", "exec sleep 30"]).process_group(0).spawn().unwrap();
+        fixture.state.lock().1 = true;
+        let mut child = match Command::new("sh").args(["-c", "exec sleep 30"]).process_group(0).spawn() {
+            | Ok(child) => child,
+            | Err(error) => panic!("failed to spawn test process group: {error}"),
+        };
         let state = RunState {
             source: fixture.source(),
             pid: child.id() as i32,
@@ -442,7 +482,10 @@ mod tests {
             detached: true,
         };
         assert!(fixture.supervisor.record_child(&mut child, &state).is_err());
-        assert!(child.try_wait().unwrap().is_some());
+        match child.try_wait() {
+            | Ok(status) => assert!(status.is_some(), "child was still running after state write failed"),
+            | Err(error) => panic!("failed to check child process: {error}"),
+        }
         assert!(!process::alive(state.pid));
     }
 }

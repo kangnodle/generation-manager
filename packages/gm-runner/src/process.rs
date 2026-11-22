@@ -150,7 +150,10 @@ mod tests {
 
     #[test]
     fn stale_or_missing_identity_never_signals_an_unrelated_process() {
-        let mut child = Command::new("sleep").arg("30").spawn().unwrap();
+        let mut child = match Command::new("sleep").arg("30").spawn() {
+            | Ok(child) => child,
+            | Err(error) => panic!("failed to spawn sleep process: {error}"),
+        };
         let mut state = RunState {
             source: RunSource::Generation {
                 id: GenerationId(1),
@@ -163,9 +166,18 @@ mod tests {
         let stale = Process::open(&state);
         state.process_start = None;
         let legacy = Process::open(&state);
-        let survived = child.try_wait().unwrap().is_none();
-        child.kill().unwrap();
-        child.wait().unwrap();
+        let survived = match child.try_wait() {
+            | Ok(status) => status.is_none(),
+            | Err(error) => panic!("failed to check child process: {error}"),
+        };
+        match child.kill() {
+            | Ok(()) => (),
+            | Err(error) => panic!("failed to kill child process: {error}"),
+        };
+        match child.wait() {
+            | Ok(_) => (),
+            | Err(error) => panic!("failed to reap child process: {error}"),
+        };
         assert!(matches!(stale, Err(Error::NotRunning)));
         assert!(matches!(legacy, Err(Error::UnverifiedProcess(_))));
         assert!(survived);

@@ -86,12 +86,12 @@ fn stop_without_a_running_service_fails() {
 fn restart_replaces_the_running_process() {
     let fixture = project("exec sleep 300");
     fixture.gm_ok(&["generation", "build", "--activate"]);
-    let first = fixture.run_state().unwrap().pid;
+    let first = fixture.recorded_run().pid;
 
     let restarted = fixture.gm_ok(&["service", "restart"]);
     assert!(stdout(&restarted).contains("restarted generation 1"), "stdout: {}", stdout(&restarted));
 
-    let second = fixture.run_state().unwrap().pid;
+    let second = fixture.recorded_run().pid;
     assert_ne!(first, second, "restart must start a new process");
 }
 
@@ -134,7 +134,7 @@ fn the_directory_flag_runs_against_another_project() {
 
     // `-C` is what makes the tool usable from outside the project tree.
     let elsewhere = std::env::temp_dir();
-    let output = Fixture::bare().gm_in(&elsewhere, &["-C", fixture.root.to_str().unwrap(), "generation", "list"]);
+    let output = Fixture::bare().gm_in(&elsewhere, &["-C", common::utf8_path(&fixture.root), "generation", "list"]);
 
     assert!(output.status.success(), "stderr: {}", stderr(&output));
     assert!(stdout(&output).contains("built"), "stdout: {}", stdout(&output));

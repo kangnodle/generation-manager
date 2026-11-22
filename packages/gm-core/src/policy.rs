@@ -40,7 +40,10 @@ mod tests {
     fn policies_choose_generation_numbers_and_rollback_targets() {
         let existing = ids(&[1, 3, 2]);
         assert_eq!(next_generation_id(&existing), GenerationId(4));
-        assert_eq!(rollback_target(Some(GenerationId(3)), &existing).unwrap(), GenerationId(2));
+        match rollback_target(Some(GenerationId(3)), &existing) {
+            | Ok(target) => assert_eq!(target, GenerationId(2)),
+            | Err(error) => panic!("failed to select a rollback target for generation 3: {error}"),
+        }
     }
 
     #[test]
