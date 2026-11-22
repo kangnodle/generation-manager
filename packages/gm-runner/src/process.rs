@@ -41,21 +41,47 @@ fn start_identity(pid: i32) -> Option<String> {
 fn start_identity(_pid: i32) -> Option<String> { None }
 
 pub(crate) fn alive(pid: i32) -> bool {
-    if pid <= 0 || unsafe { libc::kill(pid, 0) } != 0 {
-        return false;
-    }
+    let exists = pid > 0 && unsafe { libc::kill(pid, 0) } == 0;
     #[cfg(target_os = "linux")]
     {
+        if !exists {
+            return false;
+        }
         let Ok(stat) = std::fs::read_to_string(format!("/proc/{pid}/stat")) else {
             return false;
         };
         stat.rsplit_once(") ").is_some_and(|(_, fields)| !fields.starts_with("Z "))
     }
     #[cfg(not(target_os = "linux"))]
-    true
+    exists
 }
 
 pub(crate) fn matches(state: &RunState) -> bool { state.process_start.is_some() && identity(state.pid) == state.process_start }
+
+#[cfg(target_os = "macos")]
+fn group_has_exited(pgid: i32) -> bool {
+    // Darwin can return EPERM for a group containing only unreaped processes.
+    // Check every member: a child can outlive the group leader.
+    let capacity = unsafe { libc::proc_listpgrppids(pgid, std::ptr::null_mut(), 0) };
+    if capacity <= 0 {
+        return false;
+    }
+    let mut members = vec![0 as libc::pid_t; capacity as usize];
+    let bytes = std::mem::size_of_val(members.as_slice()) as i32;
+    let count = unsafe { libc::proc_listpgrppids(pgid, members.as_mut_ptr().cast(), bytes) };
+    if count <= 0 {
+        // An empty list can also indicate a lookup failure. Confirm the group
+        // is gone.
+        return unsafe { libc::kill(-pgid, 0) } == -1 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH);
+    }
+    count < capacity
+        && members[.. count as usize].iter().all(|&pid| {
+            // getpgid returns ESRCH for a zombie as well as for a reaped
+            // process.
+            let group = unsafe { libc::getpgid(pid) };
+            group != pgid && (group != -1 || io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH))
+        })
+}
 
 pub(crate) fn terminate(child: &mut Child) -> io::Result<()> {
     if unsafe { libc::kill(-(child.id() as i32), libc::SIGKILL) } == -1 {
@@ -127,6 +153,10 @@ impl Process {
         }
         let error = io::Error::last_os_error();
         if error.raw_os_error() == Some(libc::ESRCH) {
+            return Ok(false);
+        }
+        #[cfg(target_os = "macos")]
+        if error.raw_os_error() == Some(libc::EPERM) && group_has_exited(self.state.pid) {
             return Ok(false);
         }
         #[cfg(target_os = "linux")]
