@@ -1,0 +1,261 @@
+//! Behaviour tests for the activation pointer: these cover the invariants the
+//! rest of the tool relies on — numbering, atomic switching, rollback target
+//! selection, and GC never eating something you still need.
+
+use gm_application::RunStateRepository;
+use gm_core::generation::{Generation,
+                          GenerationId,
+                          GenerationStatus};
+use gm_store::{Layout,
+               ProjectLock,
+               Store};
+use std::{path::PathBuf,
+          sync::atomic::{AtomicU32,
+                         Ordering}};
+
+static COUNTER: AtomicU32 = AtomicU32::new(0);
+
+struct TempProject(PathBuf);
+
+impl TempProject {
+    fn new() -> TempProject {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let path = std::env::temp_dir().join(format!("gm-test-{}-{n}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        TempProject(path)
+    }
+}
+
+impl Drop for TempProject {
+    fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+}
+
+fn add_generation(store: &Store, lock: &ProjectLock, commit: &str) -> GenerationId {
+    let staged = store.stage(lock, Some(commit)).unwrap();
+    std::fs::write(staged.payload.join("marker"), commit).unwrap();
+    let id = staged.id;
+    let meta = Generation {
+        id,
+        commit: Some(commit.to_string()),
+        worktree: None,
+        dirty: false,
+        built_at: std::time::SystemTime::now(),
+        status: GenerationStatus::Built,
+        artifacts: vec![PathBuf::from("marker")],
+        note: None,
+    };
+    store.commit(lock, staged, meta).unwrap();
+    id
+}
+
+#[test]
+fn generations_are_numbered_from_one() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+
+    assert_eq!(add_generation(&store, &lock, "aaaaaaa"), GenerationId(1));
+    assert_eq!(add_generation(&store, &lock, "bbbbbbb"), GenerationId(2));
+    assert_eq!(store.list().unwrap().len(), 2);
+}
+
+#[test]
+fn completed_run_cleanup_waits_for_the_lock_and_preserves_a_replacement() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let state = gm_store::FileRunState::new(store.layout().clone());
+    let first = gm_core::RunState {
+        source: gm_core::RunSource::Worktree {
+            name: "first".into(),
+        },
+        pid: 10,
+        process_start: Some("first-process".into()),
+        started_at: std::time::SystemTime::now(),
+        detached: false,
+    };
+    state.write(&first).unwrap();
+    let lock = store.lock().unwrap();
+    let cleanup = state.clone();
+    let completed = first.clone();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let thread = std::thread::spawn(move || {
+        tx.send("started").unwrap();
+        cleanup.clear_if_matches(&completed).unwrap();
+        tx.send("finished").unwrap();
+    });
+    assert_eq!(rx.recv().unwrap(), "started");
+    assert!(rx.recv_timeout(std::time::Duration::from_millis(30)).is_err());
+    // Reused PIDs also require the process identity and run timestamp to match.
+    let second = gm_core::RunState {
+        process_start: Some("replacement-process".into()),
+        ..first.clone()
+    };
+    state.write(&second).unwrap();
+    drop(lock);
+    assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap(), "finished");
+    thread.join().unwrap();
+    assert_eq!(state.read().unwrap().process_start, second.process_start);
+    state.clear_if_matches(&second).unwrap();
+    assert!(state.read().is_none());
+    std::fs::create_dir(store.layout().run_state()).unwrap();
+    assert!(state.write(&first).is_err());
+}
+
+#[test]
+fn unreadable_generations_still_reserve_their_number() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    add_generation(&store, &lock, "aaaaaaa");
+    let second = add_generation(&store, &lock, "bbbbbbb");
+    let original = store.get(second).unwrap().dir;
+    std::fs::write(Layout::generation_meta(&original), "invalid JSON").unwrap();
+
+    assert_eq!(add_generation(&store, &lock, "bbbbbbb"), GenerationId(3));
+    assert_eq!(std::fs::read_to_string(original.join("root/marker")).unwrap(), "bbbbbbb");
+    assert_eq!(std::fs::read_to_string(Layout::generation_meta(&original)).unwrap(), "invalid JSON");
+}
+
+#[test]
+fn commit_cannot_replace_a_published_generation() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    let id = add_generation(&store, &lock, "aaaaaaa");
+    let entry = store.get(id).unwrap();
+    let mut meta = entry.meta.clone();
+    meta.note = Some("replacement".into());
+    let staged = gm_store::StagedGeneration {
+        id,
+        payload: entry.payload(),
+        dir: entry.dir,
+    };
+
+    assert!(store.commit(&lock, staged, meta).is_err());
+    assert_eq!(store.get(id).unwrap().meta.note, None);
+}
+
+#[test]
+fn nothing_is_active_before_the_first_switch() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    add_generation(&store, &lock, "aaaaaaa");
+
+    assert_eq!(store.current_id().unwrap(), None);
+    assert!(store.current().is_err());
+}
+
+#[test]
+fn switching_moves_the_current_pointer_and_records_history() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    let first = add_generation(&store, &lock, "aaaaaaa");
+    let second = add_generation(&store, &lock, "bbbbbbb");
+
+    store.switch(&lock, first, "test").unwrap();
+    assert_eq!(store.current_id().unwrap(), Some(first));
+
+    store.switch(&lock, second, "test").unwrap();
+    assert_eq!(store.current_id().unwrap(), Some(second));
+    // The payload really follows the pointer.
+    assert_eq!(std::fs::read_to_string(store.current().unwrap().payload().join("marker")).unwrap(), "bbbbbbb");
+
+    let history = store.history().unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[1].from, Some(first));
+    assert_eq!(history[1].to, second);
+}
+
+#[test]
+fn rollback_target_is_the_highest_generation_below_current() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    let first = add_generation(&store, &lock, "aaaaaaa");
+    let second = add_generation(&store, &lock, "bbbbbbb");
+    let third = add_generation(&store, &lock, "ccccccc");
+
+    store.switch(&lock, third, "test").unwrap();
+    assert_eq!(store.rollback_target().unwrap(), second);
+
+    store.switch(&lock, second, "test").unwrap();
+    assert_eq!(store.rollback_target().unwrap(), first);
+
+    store.switch(&lock, first, "test").unwrap();
+    assert!(store.rollback_target().is_err());
+}
+
+#[test]
+fn switching_to_a_missing_generation_leaves_current_untouched() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    let first = add_generation(&store, &lock, "aaaaaaa");
+    store.switch(&lock, first, "test").unwrap();
+
+    assert!(store.switch(&lock, GenerationId(99), "test").is_err());
+    assert_eq!(store.current_id().unwrap(), Some(first));
+}
+
+#[test]
+fn gc_keeps_the_active_generation_and_its_rollback_target() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    let first = add_generation(&store, &lock, "aaaaaaa");
+    let second = add_generation(&store, &lock, "bbbbbbb");
+    let third = add_generation(&store, &lock, "ccccccc");
+    let fourth = add_generation(&store, &lock, "ddddddd");
+
+    store.switch(&lock, fourth, "test").unwrap();
+    let removed = store.gc(&lock, 2).unwrap();
+
+    assert_eq!(removed, vec![first, second]);
+    let remaining: Vec<_> = store.list().unwrap().into_iter().map(|e| e.meta.id).collect();
+    assert_eq!(remaining, vec![third, fourth]);
+    assert_eq!(store.current_id().unwrap(), Some(fourth));
+}
+
+#[test]
+fn a_second_lock_is_refused_while_the_first_is_held() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+
+    let held = store.lock().unwrap();
+    assert!(store.lock().is_err());
+    drop(held);
+    assert!(store.lock().is_ok());
+}
+
+#[test]
+fn a_lock_from_another_project_cannot_mutate_the_store() {
+    let first = TempProject::new();
+    let second = TempProject::new();
+    let store = Store::open(Layout::new(&first.0)).unwrap();
+    let other = Store::open(Layout::new(&second.0)).unwrap();
+    let wrong_lock = other.lock().unwrap();
+
+    assert!(store.stage(&wrong_lock, Some("aaaaaaa")).is_err());
+}
+
+#[test]
+fn latest_generation_skips_unreadable_entries_and_handles_an_empty_store() {
+    let temp = TempProject::new();
+    let store = Store::open(Layout::new(&temp.0)).unwrap();
+    let lock = store.lock().unwrap();
+    assert!(store.latest().unwrap().is_none());
+
+    add_generation(&store, &lock, "aaaaaaa");
+    let expected = add_generation(&store, &lock, "bbbbbbb");
+    let corrupt = add_generation(&store, &lock, "ccccccc");
+    let missing = add_generation(&store, &lock, "ddddddd");
+    let corrupt_entry = store.get(corrupt).unwrap();
+    std::fs::write(Layout::generation_meta(&corrupt_entry.dir), "invalid JSON").unwrap();
+    let missing_entry = store.get(missing).unwrap();
+    std::fs::remove_dir_all(missing_entry.dir).unwrap();
+
+    assert_eq!(store.latest().unwrap().unwrap().meta.id, expected);
+}

@@ -1,0 +1,35 @@
+[workspace]
+resolver = "3"
+members = [
+  "packages/gm-core",
+  "packages/gm-application",
+  "packages/gm-store",
+  "packages/gm-runner",
+  "apps/gm-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/mgch/generation-manager"
+
+[workspace.dependencies]
+gm-core = { path = "packages/gm-core" }
+gm-application = { path = "packages/gm-application" }
+gm-store = { path = "packages/gm-store" }
+gm-runner = { path = "packages/gm-runner" }
+
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+fs2 = "0.4"
+libc = "0.2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+toml = "1"
+
+[profile.release]
+strip = true
+lto = "thin"
