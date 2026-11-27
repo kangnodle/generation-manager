@@ -78,7 +78,8 @@ case "$platform" in
     Linux) bundle_name="gm-$version-linux-$architecture" ;;
     Darwin) bundle_name="gm-$version-macos-$architecture" ;;
 esac
-tar -czf "$staging/artifacts/$bundle_name.tar.gz" -C "$staging/bundle" bin
+install -m 644 LICENSE "$staging/bundle/LICENSE"
+tar -czf "$staging/artifacts/$bundle_name.tar.gz" -C "$staging/bundle" bin LICENSE
 
 printf '==> Packaging\n'
 if [[ $platform == Linux ]]; then
@@ -87,6 +88,7 @@ if [[ $platform == Linux ]]; then
     deb_root="$staging/debian/generation-manager"
     mkdir -p "$deb_root/DEBIAN" "$deb_root/usr/bin"
     install -m 755 "$binary" "$deb_root/usr/bin/gm"
+    install -Dm644 LICENSE "$deb_root/usr/share/doc/generation-manager/copyright"
     printf 'Source: generation-manager\n\nPackage: generation-manager\nArchitecture: any\n' > "$staging/debian/control"
     dependencies=$(cd "$staging" && dpkg-shlibdeps -O debian/generation-manager/usr/bin/gm)
     cat > "$deb_root/DEBIAN/control" <<EOF
@@ -103,14 +105,16 @@ EOF
 
     mkdir -p "$staging/rpm/SOURCES"
     install -m 755 "$binary" "$staging/rpm/SOURCES/gm"
+    install -m 644 LICENSE "$staging/rpm/SOURCES/LICENSE"
     cat > "$staging/generation-manager.spec" <<EOF
 Name: generation-manager
 Version: $package_version
 Release: 1
 Summary: Worktree-to-generation development lifecycle manager
-License: MIT
+License: LicenseRef-Proprietary
 URL: https://github.com/mgch/generation-manager
 Source0: gm
+Source1: LICENSE
 %global __os_install_post %{nil}
 %global _build_id_links none
 
@@ -119,9 +123,11 @@ Manage development worktrees, release generations, and rollbacks.
 
 %install
 install -Dm755 "%{SOURCE0}" "%{buildroot}%{_bindir}/gm"
+install -Dm644 "%{SOURCE1}" "%{buildroot}%{_licensedir}/%{name}/LICENSE"
 
 %files
 %{_bindir}/gm
+%license %{_licensedir}/%{name}/LICENSE
 EOF
     rpmbuild -bb --nodeps --target "$architecture" --define "_topdir $staging/rpm" \
         --define "_rpmdir $staging/artifacts" --define '_rpmfilename %{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}.rpm' \
@@ -129,6 +135,8 @@ EOF
 else
     mkdir -p "$staging/pkg/usr/local/bin"
     install -m 755 "$binary" "$staging/pkg/usr/local/bin/gm"
+    mkdir -p "$staging/pkg/usr/local/share/doc/generation-manager"
+    install -m 644 LICENSE "$staging/pkg/usr/local/share/doc/generation-manager/LICENSE"
     pkgbuild --root "$staging/pkg" --install-location / --identifier com.github.mgch.generation-manager \
         --version "${version%%[-+]*}" "$staging/artifacts/$bundle_name.pkg"
 fi

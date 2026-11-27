@@ -41,7 +41,9 @@ if defined WSLENV (set "WSLENV=%WSLENV%:GM_WSL_BINARY/p") else (set "WSLENV=GM_W
 wsl.exe --exec bash -c "exec \"$GM_WSL_BINARY\" \"$@\"" gm %*
 exit /b %ERRORLEVEL%
 '@ | Set-Content -LiteralPath $launcherPath -Encoding Ascii
-    $bundleFiles = $launcherPath, (Join-Path $staging 'gm-linux')
+    $licensePath = Join-Path $staging 'LICENSE'
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../LICENSE') -Destination $licensePath
+    $bundleFiles = $launcherPath, (Join-Path $staging 'gm-linux'), $licensePath
     $bundle = Join-Path $staging "$artifactName.zip"
     Compress-Archive -LiteralPath $bundleFiles -DestinationPath $bundle
 
@@ -62,6 +64,7 @@ Section
     SetOutPath "$INSTDIR"
     File "gm-linux"
     File "gm.cmd"
+    File "LICENSE"
     WriteUninstaller "$INSTDIR\uninstall.exe"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\GenerationManager" "DisplayName" "Generation Manager (WSL)"
     WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\GenerationManager" "InstallLocation" "$INSTDIR"
@@ -71,6 +74,7 @@ SectionEnd
 Section "Uninstall"
     Delete "$INSTDIR\gm-linux"
     Delete "$INSTDIR\gm.cmd"
+    Delete "$INSTDIR\LICENSE"
     Delete "$INSTDIR\uninstall.exe"
     RMDir "$INSTDIR"
     DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\GenerationManager"

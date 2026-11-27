@@ -2,7 +2,8 @@
 name = "gm-cli"
 version.workspace = true
 edition.workspace = true
-license.workspace = true
+license-file.workspace = true
+publish.workspace = true
 repository.workspace = true
 description = "Worktree-to-generation development lifecycle manager"
 
